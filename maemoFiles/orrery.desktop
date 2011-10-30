@@ -1,0 +1,8 @@
+[Desktop Entry]
+Encoding=UTF-8
+Version=3.0
+Type=Application
+Name=Orrery
+Exec=/usr/share/orrery/orreryLaunch
+Icon=orrery
+
