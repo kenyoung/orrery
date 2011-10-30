@@ -102,7 +102,7 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 #define STAR_NAME_V_OFFSET (14) /* Vertical offset of star name from star */
 
 char *orreryVersion = "3.6";
-char *userDir; /* Holds the name of the directory holding private config file */
+char *userDir;            /* Holds the name of the directory holding private config file */
 char *privateCatalogName; /* Holds the full name of the user's private locations catalog */
 char dataDir[100];
 char dirName[80];
@@ -139,6 +139,12 @@ int displayPlanetsAsSymbols = FALSE;
 char *solarSystemNames[N_SOLAR_SYSTEM_OBJECTS] = {"Sun",     "Mercury",   "Venus",    "Earth",
 						  "Moon",    "Mars",      "Jupiter",  "Saturn",
 						  "Uranus",  "Neptune",   "Comet"};
+/*
+  The following array holds the scale factors, in million km,
+  used for the to-scale Solar System plot.   Element n is the
+  scale factor used when planet n is the outermost displayed
+  planet
+*/
 float solarSystemScales[N_SOLAR_SYSTEM_OBJECTS] = {0.0, 20.0, 50.0, 50.0,
 						   0.0, 100.0, 200.0, 500.0,
 						   1000.0, 2000.0, 0.0};
