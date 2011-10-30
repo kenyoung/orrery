@@ -1,0 +1,19 @@
+I thank the International Meteor Organization
+(http://www.imo.net/imo/intro)
+for permission to use their data to produce the meteor shower
+related displays.
+
+The planetary positions are produced using the document
+titled "Keplerian Elements for Approximate Positions of the
+Major Planets" by E.M. Standish (JPL/Caltech) available from
+the JPL Solar System Dynamics web site (http://ssd.jpl.nasa.gov/).
+
+Star positions are from the Hipparcos catalog
+See http://www.rssd.esa.int/index.php?project=HIPPARCOS
+
+Heiko Stubner provided patches (now folded into the code)
+to fix some bugs related to reading ASCII data files.
+
+BIG thanks to Joshua Rosen, who contributed bug fixes
+and put together a sane set of autotools files.
+

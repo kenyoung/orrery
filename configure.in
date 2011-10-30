@@ -1,0 +1,19 @@
+# Autotools initialisation:
+AC_INIT(orrery, 3.0, orrery.moko@gmail.com)
+AM_INIT_AUTOMAKE([-Wall])
+AC_CONFIG_SRCDIR(orrery.c)
+
+# Check for programs:
+AC_PROG_CC
+AM_PROG_CC_C_O
+AC_PROG_INSTALL
+
+# Check for libraries:
+PKG_CHECK_MODULES(GTK, [gtk+-2.0])
+PKG_CHECK_MODULES(HILDON, [hildon-1])
+PKG_CHECK_MODULES(LIBOSSO, [libosso])
+PKG_CHECK_MODULES(DBUS, [dbus-1])
+
+# Output configured files:
+AC_PREFIX_DEFAULT(/usr)
+AC_OUTPUT([Makefile icons/Makefile data/Makefile maemoFiles/Makefile])

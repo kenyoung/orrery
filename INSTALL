@@ -1,0 +1,14 @@
+This program is intended to be used on Nokia N900 phones.   If you
+just want to run the program, it is much easier to install the
+binary files than to compile from sources, because to compile,
+you'll need to build an Maemo 5 crossdevelopement environment,
+or get gnu software development tools running on your phone.
+The binary files can be installed from the Maemo 5 Extras
+repository.
+
+The autotools configuration files in this package work properly
+in the Maemo 5 scratchbox development environment.   They have not
+been tested in any other environment.
+
+If you have any problems with, or comments about the orrery or its
+installation, please send a message to orrery.moko@gmail.com.

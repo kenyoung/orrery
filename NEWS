@@ -1,0 +1,160 @@
+Version 2.7:
+    New user features:
+
+       Monthly moon calendar now uses moon images.
+       Also, both moon calendars now show "Blue
+       Moons", using the common definition that
+       a Blue Moon is the second full moon in a
+       calendar month.
+
+       Enlarged and re-arranged buttons on the
+       "opts" page, for enhanced finger
+       friendliness.
+
+       Got rid of "stylus mode".   The program is
+       always in finger mode now.   There was
+       never a significant difference between the
+       two modes anyway.
+
+       The program now always saves configuration
+       changes in nonvolatile memory.   This is
+       the standard behavior for handheld
+       applications.
+
+    Bug Fixes:
+
+       Build-related files completely redone so
+       as to use GNU autotools properly.
+
+       Program no longer crashes if run on a
+       phone who's locale is set to a language
+       which uses a comma for the decimal point.
+
+       Improved handling of zoom gestures which
+       originate in the panning area.   Before
+       this fix, it was difficult or impossible
+       to zoom an area near the horizon, because
+       such a gesture would be interpreted as a
+       "press" in the panning area, which would
+       call up the azimuth compass.
+
+       Removed the call to the popt library that
+       parsed the command line arguments.   This
+       caused problems, because not all Freerunner
+       software stacks shipped with the popt
+       library.   The program now parses its
+       command line arguments with no call to any
+       library.
+
+       Fixed a bug which made it difficult to
+       use the arrows at the bottom of the monthly
+       moon calendar to change months.
+
+Version 3.0 - Ported to Maemo 5
+
+Maemo changes: Verion 3.0.8 to 3.0.9:
+
+    New Features
+       Application can now use the phone-derived
+       position (either from cell tower coords
+       or GPS)
+
+       Added brief message on Symbol Key page about
+       the magnitude brightness scale.
+
+    Bug Fixes:
+
+       Fixed Bugzilla bug 8434 - Localization
+       problem.   setlocale() did not work in maemo
+       to set LC_NUMERIC to "C".   Fixed with
+       wrapper script /usr/share/orrery/orreryLaunch
+
+       Fixed package short discription (it was
+       pointlessly enclosed in <>.
+
+Maemo changes: Version 3.0.9 to 3.1.2:
+
+    New features:
+
+       Added a menu option "Web Help Page" to open the
+       wiki page automatically.
+
+       Added a "Qick Tips" page
+
+       Hildonized more of the menu options.
+
+       One can now delete entries from the private locations
+       file via the GUI.
+
+    Bug fixes:
+
+       Fixed bugzilla bug 8859.
+
+       Rationalized when the "Save in Private Menu"
+       button is shown.
+
+       Got rid of a small memory leak that occured
+       when new entries were added to the user's
+       private locations menu.
+
+       Private data now stored in $HOME/.orrery, so that
+       it will not be deleted if the application is
+       upgraded.
+
+Maemo changes: Version 3.1.3 to 3.2.1:
+
+    New features:
+
+       Larger font text is used on several pages, improving
+       readability.
+
+       The positions of the Sun and Moon are shown on the
+       azimuth compass if they are above the horizon.
+       The Moon is not shown if it is so close to the Sun
+       that the symbols would overlap.
+
+    Bug fixes:
+
+       Clear the azimuth compass mode when the display area
+       receives an expose event.   This prevents the azimuth
+       compass arrow from appearing on auxilary pages if
+       the user is in az compass mode when another page is
+       selected.
+
+       Occasionally the Big Moon Calendar showed a single
+       moon in a 22nd column (there should only be 21). This
+       has been fixed.
+
+       Fixed defective constellation file for "Ara"
+
+Maemo changes: Version 3.2.1 to 3.2.3:
+
+    New features:
+
+       Added many more star names, and added code to prevent star
+       names from being printed over each other.
+
+       Added Bayer designations (Greek letter designations)
+       for stars.
+
+       Added a page showing various astronomical times, such as
+       local solar time, etc.
+
+       Added a page showing the analemma for the currently selected
+       year.
+
+       The starting times for each of the four seasons for the
+       currently selected year are now shown on the "Sun and Moon"
+       page.
+
+       The current phone position is pre-loaded into the latitude
+       and longitude picker widgets.   Similarly, the current UT
+       is preloaded into the UT time picker widget.
+
+    Bug fixes:
+
+       Removed some unneeded calculations from the routine which
+       plots the constellation stick figures.
+
+       The screen is no longer periodically updated when the app is
+       minimized (does not have focus).   This saves a little power.
