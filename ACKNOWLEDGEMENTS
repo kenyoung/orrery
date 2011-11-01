@@ -17,3 +17,7 @@ to fix some bugs related to reading ASCII data files.
 BIG thanks to Joshua Rosen, who contributed bug fixes
 and put together a sane set of autotools files.
 
+BIG thanks too to Tempura San, who found several problems in
+the Makefile.am files which would never have been tracked down
+otherwise.
+
