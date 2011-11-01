@@ -131,7 +131,12 @@ sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 sysconfdir = @sysconfdir@
 target_alias = @target_alias@
-nobase_dist_pkgdata_DATA = config \
+
+# complete list of subdirectory files can be created using this command:
+# $ find constellations deepSky menus orbitalElements -maxdepth 1 -type f -printf "\t%p \\\\\n"|sort
+# and pasted below 'orreryLaunch'
+nobase_dist_pkgdata_DATA = \
+	config \
 	hipparcos.dat \
 	starNames.bin \
 	meteorShowers \
@@ -141,10 +146,132 @@ nobase_dist_pkgdata_DATA = config \
 	jupiterVSOPData.bin \
 	saturnVSOPData.bin \
 	orreryLaunch \
-	constellations/* \
-	menus/* \
-	deepSky/* \
-	orbitalElements/*
+	constellations/Andromeda \
+	constellations/Antlia \
+	constellations/Apus \
+	constellations/Aquarius \
+	constellations/Aquila \
+	constellations/Ara \
+	constellations/Aries \
+	constellations/Auriga \
+	constellations/Bee_Hive \
+	constellations/Big_Dipper \
+	constellations/Bootes \
+	constellations/Caelum \
+	constellations/Camelopardalis \
+	constellations/Cancer \
+	constellations/Canes_Venatici \
+	constellations/Canis_Major \
+	constellations/Canis_Minor \
+	constellations/Capricornus \
+	constellations/Carina \
+	constellations/Cassiopeia \
+	constellations/Centaurus \
+	constellations/Cepheus \
+	constellations/Cetus \
+	constellations/Chamaeleon \
+	constellations/Circinus \
+	constellations/Columba \
+	constellations/Coma_Berenices \
+	constellations/Corona_Australis \
+	constellations/Corona_Borealis \
+	constellations/Corvus \
+	constellations/Crater \
+	constellations/Crux \
+	constellations/Cygnus \
+	constellations/Delphinus \
+	constellations/Dorado \
+	constellations/Draco \
+	constellations/Equuleus \
+	constellations/Eridanus \
+	constellations/False_Cross \
+	constellations/Fornax \
+	constellations/Gemini \
+	constellations/Great_Diamond \
+	constellations/Great_Hook \
+	constellations/Great_Square \
+	constellations/Grus \
+	constellations/Hercules \
+	constellations/Horologium \
+	constellations/Hyades \
+	constellations/Hydra \
+	constellations/Hydrus \
+	constellations/Indus \
+	constellations/Keystone \
+	constellations/Lacerta \
+	constellations/Leo \
+	constellations/Leo_Minor \
+	constellations/Lepus \
+	constellations/Libra \
+	constellations/Little_Dipper \
+	constellations/Lupus \
+	constellations/Lynx \
+	constellations/Lyra \
+	constellations/Mensa \
+	constellations/Microscopium \
+	constellations/Monoceros \
+	constellations/Musca \
+	constellations/Norma \
+	constellations/Northern_Cross \
+	constellations/Octans \
+	constellations/Ophiuchus \
+	constellations/Orion \
+	constellations/Pavo \
+	constellations/Pegasus \
+	constellations/Perseus \
+	constellations/Phoenix \
+	constellations/Pictor \
+	constellations/Pisces \
+	constellations/Piscis_Austrinus \
+	constellations/Pleiades \
+	constellations/Puppis \
+	constellations/Pyxis \
+	constellations/Reticulum \
+	constellations/Sagitta \
+	constellations/Sagittarius \
+	constellations/Scorpius \
+	constellations/Sculptor \
+	constellations/Scutum \
+	constellations/Serpens \
+	constellations/Sextans \
+	constellations/Southern_Cross \
+	constellations/Summer_Triangle \
+	constellations/Taurus \
+	constellations/Tea_Pot \
+	constellations/Telescopium \
+	constellations/The_Kite \
+	constellations/The_Sickle \
+	constellations/Triang_Australe \
+	constellations/Triangulum \
+	constellations/Tucana \
+	constellations/Ursa_Major \
+	constellations/Ursa_Minor \
+	constellations/Vela \
+	constellations/Virgo \
+	constellations/Volans \
+	constellations/Vulpecula \
+	constellations/Winter_Triangle \
+	deepSky/messier \
+	deepSky/misc \
+	menus/Africa \
+	menus/Antarctica \
+	menus/Asia \
+	menus/Australia \
+	menus/Europe \
+	menus/Island \
+	menus/North_America \
+	menus/Observatories \
+	menus/South_America \
+	menus/regions \
+	orbitalElements/earthMoonBaryElements \
+	orbitalElements/jupiterElements \
+	orbitalElements/marsElements \
+	orbitalElements/mercuryElements \
+	orbitalElements/neptuneElements \
+	orbitalElements/plutoElements \
+	orbitalElements/saturnElements \
+	orbitalElements/uranusElements \
+	orbitalElements/venusElements
 
 all: all-am
 

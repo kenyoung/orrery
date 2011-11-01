@@ -35,7 +35,8 @@ NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
 subdir = maemoFiles
-DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
+DIST_COMMON = $(dist_dbus_DATA) $(dist_desktop_DATA) \
+	$(dist_oicon_DATA) $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.in
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -45,10 +46,10 @@ CONFIG_CLEAN_FILES =
 SOURCES =
 DIST_SOURCES =
 am__installdirs = "$(DESTDIR)$(dbusdir)" "$(DESTDIR)$(desktopdir)" "$(DESTDIR)$(oicondir)"
-dbusDATA_INSTALL = $(INSTALL_DATA)
-desktopDATA_INSTALL = $(INSTALL_DATA)
-oiconDATA_INSTALL = $(INSTALL_DATA)
-DATA = $(dbus_DATA) $(desktop_DATA) $(oicon_DATA)
+dist_dbusDATA_INSTALL = $(INSTALL_DATA)
+dist_desktopDATA_INSTALL = $(INSTALL_DATA)
+dist_oiconDATA_INSTALL = $(INSTALL_DATA)
+DATA = $(dist_dbus_DATA) $(dist_desktop_DATA) $(dist_oicon_DATA)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
 AMDEP_FALSE = @AMDEP_FALSE@
@@ -133,11 +134,11 @@ sharedstatedir = @sharedstatedir@
 sysconfdir = @sysconfdir@
 target_alias = @target_alias@
 dbusdir = $(datadir)/dbus-1/services
-dbus_DATA = com.nokia.orrery.service
+dist_dbus_DATA = com.nokia.orrery.service
 desktopdir = $(datadir)/applications/hildon
-desktop_DATA = orrery.desktop
-oicondir = $(datadir)/icons/hicolor/40x40/hildon/
-oicon_DATA = orrery.png
+dist_desktop_DATA = orrery.desktop
+oicondir = $(datadir)/icons/hicolor/40x40/hildon
+dist_oicon_DATA = orrery.png
 all: all-am
 
 .SUFFIXES:
@@ -171,53 +172,53 @@ $(top_srcdir)/configure:  $(am__configure_deps)
 $(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 uninstall-info-am:
-install-dbusDATA: $(dbus_DATA)
+install-dist_dbusDATA: $(dist_dbus_DATA)
 	@$(NORMAL_INSTALL)
 	test -z "$(dbusdir)" || $(mkdir_p) "$(DESTDIR)$(dbusdir)"
-	@list='$(dbus_DATA)'; for p in $$list; do \
+	@list='$(dist_dbus_DATA)'; for p in $$list; do \
 	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
 	  f="`echo $$p | sed -e 's|^.*/||'`"; \
-	  echo " $(dbusDATA_INSTALL) '$$d$$p' '$(DESTDIR)$(dbusdir)/$$f'"; \
-	  $(dbusDATA_INSTALL) "$$d$$p" "$(DESTDIR)$(dbusdir)/$$f"; \
+	  echo " $(dist_dbusDATA_INSTALL) '$$d$$p' '$(DESTDIR)$(dbusdir)/$$f'"; \
+	  $(dist_dbusDATA_INSTALL) "$$d$$p" "$(DESTDIR)$(dbusdir)/$$f"; \
 	done
 
-uninstall-dbusDATA:
+uninstall-dist_dbusDATA:
 	@$(NORMAL_UNINSTALL)
-	@list='$(dbus_DATA)'; for p in $$list; do \
+	@list='$(dist_dbus_DATA)'; for p in $$list; do \
 	  f="`echo $$p | sed -e 's|^.*/||'`"; \
 	  echo " rm -f '$(DESTDIR)$(dbusdir)/$$f'"; \
 	  rm -f "$(DESTDIR)$(dbusdir)/$$f"; \
 	done
-install-desktopDATA: $(desktop_DATA)
+install-dist_desktopDATA: $(dist_desktop_DATA)
 	@$(NORMAL_INSTALL)
 	test -z "$(desktopdir)" || $(mkdir_p) "$(DESTDIR)$(desktopdir)"
-	@list='$(desktop_DATA)'; for p in $$list; do \
+	@list='$(dist_desktop_DATA)'; for p in $$list; do \
 	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
 	  f="`echo $$p | sed -e 's|^.*/||'`"; \
-	  echo " $(desktopDATA_INSTALL) '$$d$$p' '$(DESTDIR)$(desktopdir)/$$f'"; \
-	  $(desktopDATA_INSTALL) "$$d$$p" "$(DESTDIR)$(desktopdir)/$$f"; \
+	  echo " $(dist_desktopDATA_INSTALL) '$$d$$p' '$(DESTDIR)$(desktopdir)/$$f'"; \
+	  $(dist_desktopDATA_INSTALL) "$$d$$p" "$(DESTDIR)$(desktopdir)/$$f"; \
 	done
 
-uninstall-desktopDATA:
+uninstall-dist_desktopDATA:
 	@$(NORMAL_UNINSTALL)
-	@list='$(desktop_DATA)'; for p in $$list; do \
+	@list='$(dist_desktop_DATA)'; for p in $$list; do \
 	  f="`echo $$p | sed -e 's|^.*/||'`"; \
 	  echo " rm -f '$(DESTDIR)$(desktopdir)/$$f'"; \
 	  rm -f "$(DESTDIR)$(desktopdir)/$$f"; \
 	done
-install-oiconDATA: $(oicon_DATA)
+install-dist_oiconDATA: $(dist_oicon_DATA)
 	@$(NORMAL_INSTALL)
 	test -z "$(oicondir)" || $(mkdir_p) "$(DESTDIR)$(oicondir)"
-	@list='$(oicon_DATA)'; for p in $$list; do \
+	@list='$(dist_oicon_DATA)'; for p in $$list; do \
 	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
 	  f="`echo $$p | sed -e 's|^.*/||'`"; \
-	  echo " $(oiconDATA_INSTALL) '$$d$$p' '$(DESTDIR)$(oicondir)/$$f'"; \
-	  $(oiconDATA_INSTALL) "$$d$$p" "$(DESTDIR)$(oicondir)/$$f"; \
+	  echo " $(dist_oiconDATA_INSTALL) '$$d$$p' '$(DESTDIR)$(oicondir)/$$f'"; \
+	  $(dist_oiconDATA_INSTALL) "$$d$$p" "$(DESTDIR)$(oicondir)/$$f"; \
 	done
 
-uninstall-oiconDATA:
+uninstall-dist_oiconDATA:
 	@$(NORMAL_UNINSTALL)
-	@list='$(oicon_DATA)'; for p in $$list; do \
+	@list='$(dist_oicon_DATA)'; for p in $$list; do \
 	  f="`echo $$p | sed -e 's|^.*/||'`"; \
 	  echo " rm -f '$(DESTDIR)$(oicondir)/$$f'"; \
 	  rm -f "$(DESTDIR)$(oicondir)/$$f"; \
@@ -305,8 +306,8 @@ info: info-am
 
 info-am:
 
-install-data-am: install-dbusDATA install-desktopDATA \
-	install-oiconDATA
+install-data-am: install-dist_dbusDATA install-dist_desktopDATA \
+	install-dist_oiconDATA
 
 install-exec-am:
 
@@ -332,19 +333,20 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-dbusDATA uninstall-desktopDATA \
-	uninstall-info-am uninstall-oiconDATA
+uninstall-am: uninstall-dist_dbusDATA uninstall-dist_desktopDATA \
+	uninstall-dist_oiconDATA uninstall-info-am
 
 .PHONY: all all-am check check-am clean clean-generic distclean \
 	distclean-generic distdir dvi dvi-am html html-am info info-am \
 	install install-am install-data install-data-am \
-	install-dbusDATA install-desktopDATA install-exec \
-	install-exec-am install-info install-info-am install-man \
-	install-oiconDATA install-strip installcheck installcheck-am \
-	installdirs maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-generic pdf pdf-am ps ps-am uninstall \
-	uninstall-am uninstall-dbusDATA uninstall-desktopDATA \
-	uninstall-info-am uninstall-oiconDATA
+	install-dist_dbusDATA install-dist_desktopDATA \
+	install-dist_oiconDATA install-exec install-exec-am \
+	install-info install-info-am install-man install-strip \
+	installcheck installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic pdf \
+	pdf-am ps ps-am uninstall uninstall-am uninstall-dist_dbusDATA \
+	uninstall-dist_desktopDATA uninstall-dist_oiconDATA \
+	uninstall-info-am
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
