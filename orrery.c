@@ -371,7 +371,9 @@ sensitiveArea *sensitiveAreaRoot = NULL;
 #define SA_MONTH_RIGHT_ARROW   (4)
 #define SA_SOLAR_SYSTEM_BUTTON (5)
 #define SA_JOVIAN              (6)
-#define SA_CELESTIAL_NAVIGATE  (7)
+#define SA_UPDATE_NAVIGATION   (7)
+#define SA_NAVIGATION_OBJECT   (8)
+#define SA_DISPLAY_NAV_LIST    (9)
 
 /* Types of deep sky object */
 #define SUPERNOVA_REMNENT (0)
@@ -629,6 +631,8 @@ HildonAppMenu *hildonMenu;
 int jovianEvents = FALSE; /* Set TRUE to list events on Jovian moon Page */
 
 int updateCelestialNavigationScreen = TRUE;
+int displayIndividualNavObject = FALSE;
+int individualNavObject;
 
 /*   E N D   O F   G L O B A L   V A R I A B L E   D E C L A R A T I O N S   */
 
@@ -5980,11 +5984,15 @@ static void drawOptsScreens(void)
       int moonVisible = FALSE;
       int color = OR_WHITE;
       int nVisibleStars = 0;
+      int indX = displayWidth/3 - 17;
+      int indY = 0;
+      int nameY = 0;
       int navStar, planet, year, month, day, tWidth, tHeight,
 	y, hAD, dD, eD, yLineTop, latDD, latMM, longDD, longMM;
       float dummyFloat, hAM, dM, eM, aD, illum, illum2, ref, latSS, longSS;
-      double rA, dec, az, zA, el, hA, dDec, tR, sD, pi,
-	parallax, dummy, tLatitude, tLongitude;
+      double rA, dec, az, zA, el, hA, dDec, tR, pi, dummy, tLatitude, tLongitude;
+      double parallax = 0.0;
+      double sD = 0.0;
       char phaseString[25], latString[6], longString[5];
       starNameEntry *star, *starEntry[N_NAV_STARS], *visibleStars[N_NAV_STARS];
 
@@ -5994,7 +6002,10 @@ static void drawOptsScreens(void)
       tJDToDate(tJD, &year, &month, &day);
       sprintf(scratchString, "Navigation Data for %d/%d/%d at %02d:%02d:%02d",
 	      month, day, year, gMT->tm_hour, gMT->tm_min, (int)gMT->tm_sec);
-      y = 10;
+      if (displayIndividualNavObject)
+	y = 30;
+      else
+	y = 10;
       renderPangoText(scratchString, OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
 		      pixmap, displayWidth/2, y, 0.0, TRUE, 0);
       y += tHeight;
@@ -6017,6 +6028,10 @@ static void drawOptsScreens(void)
 	latMM++;
 	latSS = 0.0;
       }
+      if (latMM > 59) {
+	latMM = 0;
+	latDD++;
+      }
       longDD = (int)tLongitude;
       longMM = (int)((tLongitude - (double)longDD) * 60.0);
       longSS = (tLongitude - (double)longDD - ((double)longMM)/60.0) * 3600.0;
@@ -6024,70 +6039,195 @@ static void drawOptsScreens(void)
 	longMM++;
 	longSS = 0.0;
       }
+      if (longMM > 59) {
+	longMM = 0;
+	longDD++;
+      }
       sprintf(scratchString, "Lat %02d:%02d:%02.0f %s   Long %03d:%02d:%02.0f %s",
 	      latDD, latMM, latSS, latString, longDD, longMM, longSS, longString);
       renderPangoText(scratchString, OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
 		      pixmap, displayWidth/2, y, 0.0, TRUE, 0);
       y += tHeight;
       yLineTop = y-9;
-      gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 0, y,
-		      "                         Almanac Data                  Altitude Corrections");
-      y += 12;
-      gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 0, y,
-		      " Object          GHA       Dec      Hc      Zn       Refr    SD     PA     Sum");
-      y += 12;
-      gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 0, y,
-		      "               o   '     o   '     o  '      o         '      '      '      '");
-      y+=20;
-     for (navStar = 0; navStar < N_NAV_PLANETS; navStar++) {
-	planet = navPlanets[navStar];
-	if (planet == MOON)
-	  moonPosition(tJD, dummy, &rA, &dec, &dummy, &dummy, &tR, &dummyFloat);
-	else
-	  vSOPPlanetInfo(dataDir, tJD + deltaT(tJD)/86400.0, vSOP87Mapping[navStar], &rA, &dec, &tR);
-	azZA(rA, sin(dec), cos(dec), &az, &zA, FALSE);
-	el = (M_HALF_PI - zA)/DEGREES_TO_RADIANS;
-	if (el > 1.0) {
-	  if (planet == MOON) {
-	    tR *= 1.0e-6/AU;
-	    moonVisible = TRUE;
-	  }
-	  pi = 0.146566666/tR;
-	  parallax = pi*cos(el*DEGREES_TO_RADIANS);
-	  if (navStar != 0) {
-	    gdk_draw_string(pixmap, smallFont, gC[OR_RED], 5, y, solarSystemNames[planet]);
-	    sD = 60.0*(planetRadii[planet]/(tR*AU))/DEGREES_TO_RADIANS;
-	  } else {
-	    gdk_draw_string(pixmap, smallFont, gC[OR_RED], 5, y, "Sun");
-	    sD = 60.0*(planetRadii[0]/(tR*AU))/DEGREES_TO_RADIANS;
-	  }
-	  hA = (lST() - rA - longitude) / DEGREES_TO_RADIANS;
-	  doubleNormalize0to360(&hA);
-	  hAD = (int)hA;
-	  hAM = 60.0*(hA - (double)hAD);
-	  hAD = abs(hAD);
-	  hAM = fabs(hAM);
-	  dDec = dec / DEGREES_TO_RADIANS;
-	  dD  = (int)dDec;
-	  dM  = fabs(60.0*(dDec - (double)dD));
-	  eD  = (int)el;
-	  eM  = 60.0*(el - (double)eD);
-	  aD = az / DEGREES_TO_RADIANS;
-	  ref = -60.0*refraction(M_HALF_PI-zA)/DEGREES_TO_RADIANS;
-	  if (dec > 0.0)
-	    sprintf(scratchString,
-		    "%3d %04.1f  N%02d %04.1f  %02d %04.1f  %5.1f    %5.1f  %5.1f  %5.1f  %5.1f",
-		    hAD, hAM, dD, dM, eD, eM, aD,
-		    ref, sD, parallax, ref+sD+parallax);
-	  else
-	    sprintf(scratchString,
-		    "%3d %04.1f  S%02d %04.1f  %02d %04.1f  %5.1f    %5.1f  %5.1f  %5.1f  %5.1f",
-		    hAD, hAM, abs(dD), dM, eD, eM, aD,
-                    ref, sD, parallax, ref+sD+parallax);
-	  gdk_draw_string(pixmap, smallFont, gC[OR_RED], 85, y, scratchString);
-	  y+=12;
+      if (!displayIndividualNavObject) {
+	gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 0, y,
+			"                         Almanac Data                  Altitude Corrections");
+	y += 12;
+	gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 0, y,
+			" Object          GHA       Dec      Hc      Zn       Refr    SD     PA     Sum");
+	y += 12;
+	gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 0, y,
+			"               o   '     o   '     o  '      o         '      '      '      '");
+      } else {
+	y += 20;
+	nameY = y;
+	y += 45;
+	renderPangoText("Almanac Data", OR_BLUE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, displayWidth/2, y, 0.0, TRUE, 0);
+	y += tHeight+12;
+	indY = y;
+	renderPangoText("GHA", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, indX - 100, y, 0.0, FALSE, 0);
+	y += tHeight+2;
+	if (individualNavObject != 1000) {
+	  renderPangoText("Dec", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX - 100, y, 0.0, FALSE, 0);
+	  y += tHeight+2;
+	  renderPangoText("Hc", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX - 100, y, 0.0, FALSE, 0);
+	  y += tHeight+2;
+	  renderPangoText("Zn", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX - 100, y, 0.0, FALSE, 0);
+	  y += tHeight+22;
+	  renderPangoText("Altitude Corrections", OR_BLUE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, displayWidth/2, y, 0.0, TRUE, 0);
+	  y += tHeight+12;
+	  renderPangoText("Refr", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX - 100, y, 0.0, FALSE, 0);
+	  y += tHeight+2;
+	  renderPangoText("SD", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX - 100, y, 0.0, FALSE, 0);
+	  y += tHeight+2;
+	  renderPangoText("PA", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX - 100, y, 0.0, FALSE, 0);
+	  y += tHeight+2;
+	  renderPangoText("Sum", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX - 100, y, 0.0, FALSE, 0);
+	  y += tHeight+2;
 	}
       }
+      y += 20;
+     for (navStar = 0; navStar < N_NAV_PLANETS; navStar++) {
+       if (!displayIndividualNavObject || (-(individualNavObject+1) == navStar)) {
+	 planet = navPlanets[navStar];
+	 if (planet == MOON)
+	   moonPosition(tJD, dummy, &rA, &dec, &dummy, &dummy, &tR, &dummyFloat);
+	 else
+	   vSOPPlanetInfo(dataDir, tJD + deltaT(tJD)/86400.0, vSOP87Mapping[navStar], &rA, &dec, &tR);
+	 azZA(rA, sin(dec), cos(dec), &az, &zA, FALSE);
+	 el = (M_HALF_PI - zA)/DEGREES_TO_RADIANS;
+	 if (el > 1.0) {
+	   if (planet == MOON) {
+	     tR *= 1.0e-6/AU;
+	     moonVisible = TRUE;
+	   }
+	   pi = 0.146566666/tR;
+	   parallax = pi*cos(el*DEGREES_TO_RADIANS);
+	   if (navStar != 0) {
+	     if (!displayIndividualNavObject)
+	       gdk_draw_string(pixmap, smallFont, gC[OR_RED], 5, y, solarSystemNames[planet]);
+	     else
+	       renderPangoText(solarSystemNames[planet], OR_WHITE, BIG_PANGO_FONT, &tWidth, &tHeight,
+			       pixmap, displayWidth/2, nameY, 0.0, TRUE, 0);
+	     sD = 60.0*(planetRadii[planet]/(tR*AU))/DEGREES_TO_RADIANS;
+	   } else {
+	     if (!displayIndividualNavObject)
+	       gdk_draw_string(pixmap, smallFont, gC[OR_RED], 5, y, "Sun");
+	     else
+	       renderPangoText("Sun", OR_WHITE, BIG_PANGO_FONT, &tWidth, &tHeight,
+			       pixmap, displayWidth/2, nameY, 0.0, TRUE, 0);
+	     sD = 60.0*(planetRadii[0]/(tR*AU))/DEGREES_TO_RADIANS;
+	   }
+	   if (!displayIndividualNavObject)
+	     addSensitiveArea(FALSE, SA_NAVIGATION_OBJECT, 0, y-13, displayWidth, y+5, -(float)(navStar+1));
+	   hA = (lST() - rA - longitude) / DEGREES_TO_RADIANS;
+	   doubleNormalize0to360(&hA);
+	   hAD = (int)hA;
+	   hAM = 60.0*(hA - (double)hAD);
+	   hAD = abs(hAD);
+	   hAM = fabs(hAM);
+	   dDec = dec / DEGREES_TO_RADIANS;
+	   dD  = (int)dDec;
+	   dM  = fabs(60.0*(dDec - (double)dD));
+	   eD  = (int)el;
+	   eM  = 60.0*(el - (double)eD);
+	   aD = az / DEGREES_TO_RADIANS;
+	   ref = -60.0*refraction(M_HALF_PI-zA)/DEGREES_TO_RADIANS;
+	   if (!displayIndividualNavObject) {
+	     if (dec > 0.0)
+	       sprintf(scratchString,
+		       "%3d %04.1f  N%02d %04.1f  %02d %04.1f  %5.1f    %5.1f  %5.1f  %5.1f  %5.1f",
+		       hAD, hAM, dD, dM, eD, eM, aD,
+		       ref, sD, parallax, ref+sD+parallax);
+	     else
+	       sprintf(scratchString,
+		       "%3d %04.1f  S%02d %04.1f  %02d %04.1f  %5.1f    %5.1f  %5.1f  %5.1f  %5.1f",
+		       hAD, hAM, abs(dD), dM, eD, eM, aD,
+		       ref, sD, parallax, ref+sD+parallax);
+	     gdk_draw_string(pixmap, smallFont, gC[OR_RED], 85, y, scratchString);
+	     y += 17;
+	   } else {
+	     sprintf(scratchString, "%3d", hAD);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX, indY, 0.0, FALSE, 0);
+	     renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	     sprintf(scratchString, "%04.1f", hAM);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX+150, indY, 0.0, FALSE, 0);
+	     renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 203, indY, 0.0, FALSE, 0);
+	     indY += tHeight+2;
+	     if (dec > 0.0)
+	       sprintf(scratchString, "+%02d", dD);
+	     else
+	       sprintf(scratchString, "-%02d", abs(dD));
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX, indY, 0.0, FALSE, 0);
+	     renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	     sprintf(scratchString, "%04.1f", dM);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX+150, indY, 0.0, FALSE, 0);
+	     renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 203, indY, 0.0, FALSE, 0);
+	     indY += tHeight+2;
+	     sprintf(scratchString, "%2d", eD);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX, indY, 0.0, FALSE, 0);
+	     renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	     sprintf(scratchString, "%04.1f", eM);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX+150, indY, 0.0, FALSE, 0);
+	     renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 203, indY, 0.0, FALSE, 0);
+	     indY += tHeight+2;
+	     sprintf(scratchString, "%5.1f", aD);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX-20, indY, 0.0, FALSE, 0);
+	     renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	     indY += 2*tHeight + 34;
+	     indX -= 30;
+	     sprintf(scratchString, "%5.1f", ref);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX, indY, 0.0, FALSE, 0);
+	     renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 60, indY, 0.0, FALSE, 0);
+	     indY += tHeight+2;
+	     sprintf(scratchString, "%5.1f", sD);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX, indY, 0.0, FALSE, 0);
+	     renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 60, indY, 0.0, FALSE, 0);
+	     indY += tHeight+2;
+	     sprintf(scratchString, "%5.1f",parallax);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX, indY, 0.0, FALSE, 0);
+	     renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 60, indY, 0.0, FALSE, 0);
+	     indY += tHeight+2;
+	     sprintf(scratchString, "%5.1f", ref+sD+parallax);
+	     renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX, indY, 0.0, FALSE, 0);
+	     renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			     pixmap, indX + 60, indY, 0.0, FALSE, 0);
+	     indY += tHeight+2;
+	   }
+	 }
+       }
+     }
       star = starNameEntryRoot;
       while (star != NULL) {
 	for (navStar = 0; navStar < N_NAV_STARS; navStar++) {
@@ -6109,64 +6249,161 @@ static void drawOptsScreens(void)
 	float muRA, muDec;
 	double appRA, appDec;
 	
-	star = visibleStars[navStar];
-	rA = star->hip->rAJ2000; dec = star->hip->decJ2000;
-	muRA  = (star->hip->muRA)/1000.0;
-	muDec = (star->hip->muDec)/1000.0;
-	calculateApparentPosition(tJD, rA, dec, 0.0, muRA, muDec, &appRA, &appDec);
-	azZA(appRA, sin(appDec), cos(appDec), &az, &zA, FALSE);
-	el = (M_HALF_PI - zA)/DEGREES_TO_RADIANS;
-	nameLen = star->nameLen;
-	if (nameLen > 12)
-	  nameLen = 12;
-	for (i = 0; i < nameLen; i++)
-	  scratchString[i] = starNameString[(star->offset) + i];
-	scratchString[i] = '\0';
-	if (navStar == nVisibleStars-1)
-	  color = OR_WHITE;
-	else if ((el > 15.0) && (el < 65.0))
-	  color = OR_GREEN;
-	else
-	  color = OR_GREY;
-	gdk_draw_string(pixmap, smallFont, gC[color], 5, y, scratchString);
-	hA = (lST() - appRA - longitude) / DEGREES_TO_RADIANS;
+	if (!displayIndividualNavObject || (individualNavObject == navStar)) {
+	  star = visibleStars[navStar];
+	  rA = star->hip->rAJ2000; dec = star->hip->decJ2000;
+	  muRA  = (star->hip->muRA)/1000.0;
+	  muDec = (star->hip->muDec)/1000.0;
+	  calculateApparentPosition(tJD, rA, dec, 0.0, muRA, muDec, &appRA, &appDec);
+	  azZA(appRA, sin(appDec), cos(appDec), &az, &zA, FALSE);
+	  el = (M_HALF_PI - zA)/DEGREES_TO_RADIANS;
+	  nameLen = star->nameLen;
+	  if (nameLen > 12)
+	    nameLen = 12;
+	  for (i = 0; i < nameLen; i++)
+	    scratchString[i] = starNameString[(star->offset) + i];
+	  scratchString[i] = '\0';
+	  if (!displayIndividualNavObject) {
+	    if (navStar == nVisibleStars-1)
+	      color = OR_WHITE;
+	    else if ((el > 15.0) && (el < 65.0))
+	      color = OR_GREEN;
+	    else
+	      color = OR_GREY;
+	    gdk_draw_string(pixmap, smallFont, gC[color], 5, y, scratchString);
+	  } else
+	    renderPangoText(scratchString, OR_WHITE, BIG_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, displayWidth/2, nameY, 0.0, TRUE, 0);
+	  if (!displayIndividualNavObject)
+	    addSensitiveArea(FALSE, SA_NAVIGATION_OBJECT, 0, y-13, displayWidth, y+5, (float)navStar);
+	  hA = (lST() - appRA - longitude) / DEGREES_TO_RADIANS;
+	  doubleNormalize0to360(&hA);
+	  hAD = (int)hA;
+	  hAM = 60.0*(hA - (double)hAD);
+	  hAD = abs(hAD);
+	  hAM = fabs(hAM);
+	  dDec = appDec / DEGREES_TO_RADIANS;
+	  dD  = (int)dDec;
+	  dM  = fabs(60.0*(dDec - (double)dD));
+	  eD  = (int)el;
+	  eM  = 60.0*(el - (double)eD);
+	  aD = az / DEGREES_TO_RADIANS;
+	  ref = -60.0*refraction(M_HALF_PI-zA)/DEGREES_TO_RADIANS;
+	  if (!displayIndividualNavObject) {
+	    if (dec > 0.0)
+	      sprintf(scratchString,
+		      "%3d %04.1f  N%02d %04.1f  %02d %04.1f  %5.1f    %5.1f  %5.1f  %5.1f  %5.1f",
+		      hAD, hAM, dD, dM, eD, eM, aD,
+		      ref, 0.0, 0.0, ref);
+	    else
+	      sprintf(scratchString,
+		      "%3d %04.1f  S%02d %04.1f  %02d %04.1f  %5.1f    %5.1f  %5.1f  %5.1f  %5.1f",
+		      hAD, hAM, abs(dD), dM, eD, eM, aD,
+		      ref, 0.0, 0.0, ref);
+	    gdk_draw_string(pixmap, smallFont, gC[color], 85, y, scratchString);
+	    y += 17;
+	  } else {
+	    sprintf(scratchString, "%3d", hAD);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX, indY, 0.0, FALSE, 0);
+	    renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	    sprintf(scratchString, "%04.1f", hAM);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX+150, indY, 0.0, FALSE, 0);
+	    renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 203, indY, 0.0, FALSE, 0);
+	    indY += tHeight+2;
+	    if (dec > 0.0)
+	      sprintf(scratchString, "+%02d", dD);
+	    else
+	      sprintf(scratchString, "-%02d", abs(dD));
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX, indY, 0.0, FALSE, 0);
+	    renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	    sprintf(scratchString, "%04.1f", dM);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX+150, indY, 0.0, FALSE, 0);
+	    renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 203, indY, 0.0, FALSE, 0);
+	    indY += tHeight+2;
+	    sprintf(scratchString, "%2d", eD);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX, indY, 0.0, FALSE, 0);
+	    renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	    sprintf(scratchString, "%04.1f", eM);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX+150, indY, 0.0, FALSE, 0);
+	    renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 203, indY, 0.0, FALSE, 0);
+	    indY += tHeight+2;
+	    sprintf(scratchString, "%5.1f", aD);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX-20, indY, 0.0, FALSE, 0);
+	    renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	    indY += 2*tHeight + 34;
+	    indX -= 30;
+	    sprintf(scratchString, "%5.1f", ref);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX, indY, 0.0, FALSE, 0);
+	    renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 60, indY, 0.0, FALSE, 0);
+	    indY += tHeight+2;
+	    sprintf(scratchString, "%5.1f", sD);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX, indY, 0.0, FALSE, 0);
+	    renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 60, indY, 0.0, FALSE, 0);
+	    indY += tHeight+2;
+	    sprintf(scratchString, "%5.1f",parallax);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX, indY, 0.0, FALSE, 0);
+	    renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 60, indY, 0.0, FALSE, 0);
+	    indY += tHeight+2;
+	    sprintf(scratchString, "%5.1f", ref+sD+parallax);
+	    renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX, indY, 0.0, FALSE, 0);
+	    renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, indX + 60, indY, 0.0, FALSE, 0);
+	    indY += tHeight+2;
+	  }
+	}
+      }
+      if (!displayIndividualNavObject || (individualNavObject == 1000)) {
+	hA = (lST() - longitude) / DEGREES_TO_RADIANS;
 	doubleNormalize0to360(&hA);
 	hAD = (int)hA;
 	hAM = 60.0*(hA - (double)hAD);
 	hAD = abs(hAD);
 	hAM = fabs(hAM);
-	dDec = appDec / DEGREES_TO_RADIANS;
-	dD  = (int)dDec;
-	dM  = fabs(60.0*(dDec - (double)dD));
-	eD  = (int)el;
-	eM  = 60.0*(el - (double)eD);
-	aD = az / DEGREES_TO_RADIANS;
-	ref = -60.0*refraction(M_HALF_PI-zA)/DEGREES_TO_RADIANS;
-	if (dec > 0.0)
-	  sprintf(scratchString,
-		  "%3d %04.1f  N%02d %04.1f  %02d %04.1f  %5.1f    %5.1f  %5.1f  %5.1f  %5.1f",
-		  hAD, hAM, dD, dM, eD, eM, aD,
-		  ref, 0.0, 0.0, ref);
-	else
-	  sprintf(scratchString,
-		  "%3d %04.1f  S%02d %04.1f  %02d %04.1f  %5.1f    %5.1f  %5.1f  %5.1f  %5.1f",
-		  hAD, hAM, abs(dD), dM, eD, eM, aD,
-		  ref, 0.0, 0.0, ref);
-	gdk_draw_string(pixmap, smallFont, gC[color], 85, y, scratchString);
-	y+=15;
+	if (!displayIndividualNavObject) {
+	  gdk_draw_string(pixmap, smallFont, gC[color], 5, y, "Aries");
+	  addSensitiveArea(FALSE, SA_NAVIGATION_OBJECT, 0, y-12, displayWidth, y+4, 1000.0);
+	  sprintf(scratchString, "%3d %04.1f", hAD, hAM);
+	  gdk_draw_string(pixmap, smallFont, gC[color], 85, y, scratchString);
+	} else {
+	  renderPangoText("(first point in) Aries", OR_WHITE, BIG_PANGO_FONT, &tWidth, &tHeight,
+			       pixmap, displayWidth/2, nameY, 0.0, TRUE, 0);
+	  sprintf(scratchString, "%3d", hAD);
+	  renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX, indY, 0.0, FALSE, 0);
+	  renderPangoText("degrees", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX + 50, indY, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%04.1f", hAM);
+	  renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX+150, indY, 0.0, FALSE, 0);
+	  renderPangoText("minutes", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, indX + 203, indY, 0.0, FALSE, 0);
+	}
       }
-      gdk_draw_string(pixmap, smallFont, gC[color], 5, y, "Aries");
-      hA = (lST() - longitude) / DEGREES_TO_RADIANS;
-      doubleNormalize0to360(&hA);
-      hAD = (int)hA;
-      hAM = 60.0*(hA - (double)hAD);
-      hAD = abs(hAD);
-      hAM = fabs(hAM);
-      sprintf(scratchString, "%3d %04.1f", hAD, hAM);
-      gdk_draw_string(pixmap, smallFont, gC[color], 85, y, scratchString);
-      gdk_draw_line(pixmap, gC[OR_WHITE], displayWidth/2 + 63, yLineTop,
-		    displayWidth/2 + 63, y);
-      if (moonVisible) {
+      if (!displayIndividualNavObject)
+	gdk_draw_line(pixmap, gC[OR_WHITE], displayWidth/2 + 63, yLineTop,
+		      displayWidth/2 + 63, y);
+      if (moonVisible && (!displayIndividualNavObject)) {
 	y += 30;
 	planetInfo(dataDir, EARTH, tJD,      &dummy, &dummy, &illum,  &mag);
 	planetInfo(dataDir, MOON,  tJD,      &dummy, &dummy, &illum,  &mag);
@@ -6204,14 +6441,25 @@ static void drawOptsScreens(void)
 	sprintf(phaseString, "The moon phase is %s, %2.0f%% illuminated.", scratchString, illum*100.0);
 	gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 85, y, phaseString);
       }
-      y = displayHeight*8/9;
+      if (displayIndividualNavObject) {
+	y = displayHeight*7/9 + 82;
+	renderPangoText("Display Full Object List", OR_GREEN, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, displayWidth/2, y, 0.0, TRUE, 0);
+	tWidth += 20;
+	tHeight += 10;
+	gdk_draw_rectangle(pixmap, gC[OR_GREEN], FALSE, (displayWidth-tWidth)/2, y - tHeight/2,
+			   tWidth, tHeight);
+	addSensitiveArea(FALSE, SA_DISPLAY_NAV_LIST, (displayWidth-tWidth)/2,  y - tHeight/2,
+			 (displayWidth+tWidth)/2,  y + tHeight/2, 0.0);
+      }
+      y = displayHeight*8/9 + 62;
       renderPangoText("Press Here to Update", OR_GREEN, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
 		      pixmap, displayWidth/2, y, 0.0, TRUE, 0);
       tWidth += 20;
       tHeight += 10;
       gdk_draw_rectangle(pixmap, gC[OR_GREEN], FALSE, (displayWidth-tWidth)/2, y - tHeight/2,
 		       tWidth, tHeight);
-      addSensitiveArea(FALSE, SA_CELESTIAL_NAVIGATE, (displayWidth-tWidth)/2,  y - tHeight/2,
+      addSensitiveArea(FALSE, SA_UPDATE_NAVIGATION, (displayWidth-tWidth)/2,  y - tHeight/2,
 		       (displayWidth+tWidth)/2,  y + tHeight/2, 0.0);
     }
     break;
@@ -6337,7 +6585,7 @@ static void drawOptsScreens(void)
 
 	renderPangoText("Jovian Satellite Events", OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
 			pixmap, displayWidth/2, y, 0.0, TRUE, 0);
-	y+= tHeight + 5;
+	y += tHeight + 5;
 	tJDToDate(tJD, &year, &month, &day);
 	sJD = buildTJD(year-1900, month-1, day, 0, 0, 0, 0);
 	savedTJD = tJD;
@@ -7782,7 +8030,7 @@ static void drawOptsScreens(void)
   }
   if ((aboutScreen != PLANETCOMPASS_SCREEN) && (aboutScreen != SMALL_MOONCAL_SCREEN)
       && (aboutScreen != SOLAR_SYSTEM_SCHEMATIC_SCREEN) && (aboutScreen != PLANET_ELEVATION_SCREEN)
-      && (aboutScreen != JOVIAN_MOONS)
+      && (aboutScreen != JOVIAN_MOONS) && (aboutScreen != CELESTIAL_NAVIGATION)
       && (aboutScreen != SOLAR_SYSTEM_SCALE_SCREEN) && (aboutScreen != TIMES_PAGE_SCREEN)
       && (aboutScreen != ANALEMMA_SCREEN) && (aboutScreen != SOLUNI_SCREEN)) {
     
@@ -8672,27 +8920,85 @@ void switchScreens(void)
   shouldSwitchScreens = FALSE;
 }
 
+int navBoxDisplayed = FALSE;
+sensitiveArea *displayedSA = NULL;
+
 static gboolean buttonPressEvent(GtkWidget *widget, GdkEventButton *event)
 {
-  clock_gettime(CLOCK_REALTIME, &timeSpecNow);
-  buttonPressTime = (double)timeSpecNow.tv_sec + ((double)timeSpecNow.tv_nsec)*1.0e-9;
-  /* Get rid of the old user drawn outline, if it exists */
-  if (nUserPoints > 0) {
-    free(userPoly);
-    nUserPoints = 0;
+  if ((aboutScreen == CELESTIAL_NAVIGATION) && displayingAnOptsPage) {
+    int x, y;
+    int found = FALSE;
+    sensitiveArea *sA = sensitiveAreaRoot;
+
+    /*
+      Here we do a little something to help the user select a navigational
+      object with his finger.   The navigation page shows many objects with a
+      small font; it's difficult to select one without visible feedback.
+      So here we detect where the user is pushing the screen, and if it
+      correspnds to one of the navigational source sensitive areas, we draw a
+      white box around it.
+     */
+    x = event->x; y = event->y;
+    while ((sA != NULL) && (!found)) {
+      if ((x >= sA->bLCX) && (x <= sA->tRCX)
+	    && (y >= sA->bLCY) && (y <= sA->tRCY))
+	found = TRUE;
+      else
+	sA = sA->forwardPointer;
+    }
+    if (found && (sA->type == SA_NAVIGATION_OBJECT)) {
+      gdk_draw_rectangle(drawingArea->window ,gC[OR_WHITE], FALSE, 1, sA->bLCY,
+			 displayWidth-2, sA->tRCY - sA->bLCY);
+      displayedSA = sA;
+      buttonPressed = navBoxDisplayed = TRUE;
+    }
+  } else {
+    clock_gettime(CLOCK_REALTIME, &timeSpecNow);
+    buttonPressTime = (double)timeSpecNow.tv_sec + ((double)timeSpecNow.tv_nsec)*1.0e-9;
+    /* Get rid of the old user drawn outline, if it exists */
+    if (nUserPoints > 0) {
+      free(userPoly);
+      nUserPoints = 0;
+    }
+    buttonPressed = TRUE;
+    notAPan = FALSE;
   }
-  buttonPressed = TRUE;
-  notAPan = FALSE;
   return(TRUE);
 }
 
 static gboolean motionNotifyEvent(GtkWidget *widget, GdkEventButton *event)
 {
   int x, y;
-  
+
   if (buttonPressed) {
     x = event->x; y = event->y;
-    if (inAzCompassMode) {
+    if (navBoxDisplayed) {
+      int found = FALSE;
+      sensitiveArea *sA = sensitiveAreaRoot;
+
+      /*
+	A box has been drawn around one of the Navigation Page's
+	objects.   Here we check to see if the user has moved his
+	finger enough to move into the sensitive area for a different
+	object.   If so, erase the old box (draw in back) and display
+	the new box.
+      */
+      while ((sA != NULL) && (!found)) {
+	if ((x >= sA->bLCX) && (x <= sA->tRCX)
+	    && (y >= sA->bLCY) && (y <= sA->tRCY))
+	  found = TRUE;
+	else
+	  sA = sA->forwardPointer;
+      }
+      if (found && (sA->type == SA_NAVIGATION_OBJECT) && (sA != displayedSA)) {
+	gdk_draw_rectangle(drawingArea->window ,gC[OR_BLACK], FALSE, 1,
+			   displayedSA->bLCY, displayWidth-2,
+			   displayedSA->tRCY - displayedSA->bLCY);
+	gdk_draw_rectangle(drawingArea->window ,gC[OR_WHITE], FALSE, 1, sA->bLCY,
+			   displayWidth-2, sA->tRCY - sA->bLCY);
+	displayedSA = sA;
+      }
+    } else if (inAzCompassMode) {
       int iTheta;
       float dx, dy;
       
@@ -8861,8 +9167,17 @@ static gboolean processTap(int x, int y)
 	writeConfigFile();
 	fullRedraw(FALSE);
 	break;
-      case SA_CELESTIAL_NAVIGATE:
+      case SA_UPDATE_NAVIGATION:
 	updateCelestialNavigationScreen = TRUE;
+	fullRedraw(FALSE);
+	break;
+      case SA_NAVIGATION_OBJECT:
+	displayIndividualNavObject = TRUE;
+	individualNavObject = (int)sA->value;
+	fullRedraw(FALSE);
+	break;
+      case SA_DISPLAY_NAV_LIST:
+	displayIndividualNavObject = FALSE;
 	fullRedraw(FALSE);
 	break;
       default:
@@ -8913,6 +9228,7 @@ static gboolean buttonReleaseEvent(GtkWidget *widget, GdkEventButton *event)
   int x, y, tap;
   double touchDuration;
 
+  navBoxDisplayed = FALSE;
   if (inAzCompassMode) {
     centerAz = chosenAz;
     centerAzD = (double)centerAz;
