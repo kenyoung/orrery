@@ -11,7 +11,7 @@
 #define M_2PI (2.0*M_PI)
 #define DEGREES_TO_RADIANS (M_PI/180)
 
-char argMultlr[60][4] = {{ 0, 0, 1, 0},
+short argMultlr[60][4] = {{ 0, 0, 1, 0},
 			 { 2, 0,-1, 0},
 			 { 2, 0, 0, 0},
 			 { 0, 0, 2, 0},
@@ -191,7 +191,7 @@ int SigmarCoef[60] = {-20905355,
 		              0,
 		              0,
 		           8752};
-char argMultb[60][4] = {{ 0, 0, 0, 1},
+short argMultb[60][4] = {{ 0, 0, 0, 1},
 			{ 0, 0, 1, 1},
 			{ 0, 0, 1,-1},
 			{ 2, 0, 0,-1},
@@ -315,7 +315,7 @@ int SigmabCoef[60] = {5128122,
 void doubleNormalize0to360(double *a);
 void nutation(double T, double *deltaPhi, double *deltaEps, double *eps);
 
-void moonPosition(double jDE, double sunELong, double *rA, double *dec,
+void moonPosition(double jDE, double *rA, double *dec,
 		     double *eLong, double *eLat, double *distance, float *Fr)
 {
   int i;
