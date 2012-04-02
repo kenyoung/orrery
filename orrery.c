@@ -2,7 +2,7 @@
   orrery Rev 3.6
   First Version Aug. 3, 2007
   
-  Copyright (C) (2007 ... 2011) Ken Young orrery.moko@gmail.com
+  Copyright (C) (2007 ... 2012) Ken Young orrery.moko@gmail.com
 
   This program is free software; you can redistribute it and/or 
   modify it under the terms of the GNU General Public License 
@@ -647,7 +647,7 @@ float roundf(float x);
 void planetInfo(char *dataDir, int planetNumber, double tJD, double *rA, double *dec, float *F, float *mag);
 void vSOPPlanetInfo(char *dataDir, double tJD, int planet, double *rA, double *dec, double *distance);
 void analemma(char *dataDir, double tJD, double *EoT, double *dec, double *EoE, double *eclipticLong);
-void moonPosition(double jDE, double sunELong, double *rA, double *dec,
+void moonPosition(double jDE, double *rA, double *dec,
 		  double *eLong, double *eLat, double *distance, float *Fr);
 void seasons(char *dataDir, int year,
 	     double *spring, double *summer, double *fall, double *winter);
@@ -3577,7 +3577,7 @@ int dayOfWeek(int year, int month, int day)
 #define CAL_TOP_OFFSET (40)
 #define CAL_LEFT_OFFSET (3)
 #define CAL_DAY_WIDTH  (67)
-#define CAL_DAY_HEIGHT (85)
+#define CAL_DAY_HEIGHT (92)
 #define SMALL_MOONCAL_SHIFT (50)
 
 /*
@@ -3585,7 +3585,7 @@ int dayOfWeek(int year, int month, int day)
   the one month moon calendar.
 */
 void plotDayBox(double tJDS, int week, int weekDay, int day, int today,
-		int phase, int blue)
+		int phase, int blue, int lunarDay)
 {
   int isFull = FALSE;
   double dummy;
@@ -3615,15 +3615,27 @@ void plotDayBox(double tJDS, int week, int weekDay, int day, int today,
   if (phase == 2)
     isFull = TRUE;
   drawMoon(CAL_DAY_WIDTH/2 - 1, illum, sunAngle, points[0].x+CAL_DAY_WIDTH/2 + 1,
-	   points[0].y+CAL_DAY_HEIGHT/2 + 7, TRUE, isFull, blue);
+	   points[0].y+CAL_DAY_HEIGHT/2 + 1, TRUE, isFull, blue);
   gdk_draw_polygon(pixmap, gC[OR_BLUE], FALSE, points, 4);
   sprintf(dayString, "%2d", day);
-  if (today)
+  if (today) {
     dayGC = gC[OR_WHITE];
-  else
+    points[0].x += 1;                                      points[0].y += 1;      
+    points[1].x = points[0].x;                             points[1].y = points[0].y + CAL_DAY_HEIGHT - 2;
+    points[2].x = points[1].x + CAL_DAY_WIDTH - 2;         points[2].y = points[1].y;
+    points[3].x = points[2].x;                             points[3].y = points[2].y - CAL_DAY_HEIGHT + 2;
+    gdk_draw_polygon(pixmap, gC[OR_WHITE], FALSE, points, 4);
+  } else
     dayGC = gC[OR_BLUE];
   gdk_draw_string(pixmap, smallFont, dayGC, points[0].x+gdk_string_width(smallFont, dayString)/2 - 1,
 		  points[0].y+gdk_string_width(smallFont, dayString), dayString);
+  sprintf(dayString, "%2d", lunarDay);
+  if (today)
+    dayGC = gC[OR_PINK];
+  else
+    dayGC = gC[OR_FAINT_PINK];
+  gdk_draw_string(pixmap, smallFont, dayGC, points[0].x+gdk_string_width(smallFont, dayString)/2 + 46,
+		  points[0].y + 88, dayString);
   if (phase == 0)
     gdk_draw_string(pixmap, smallFont, gC[OR_GREEN],
 		    points[0].x + CAL_DAY_WIDTH/2 - gdk_string_width(smallFont, "New")/2 + 3,
@@ -4793,6 +4805,9 @@ static void drawOptsScreens(void)
       int week = 0;
       int weekDay = 0;
       int lastWeekDay = -1;
+      int lunarDay;
+      int lastNewI = 0;
+      double fLunarDay;
       double tJDS, tJDM, tJDO, plusOneMonth, minusOneMonth;
 
       if (!moonImagesRead)
@@ -4823,12 +4838,12 @@ static void drawOptsScreens(void)
 	  if (weekDay < lastWeekDay)
 	    week++;
 	  lastWeekDay = weekDay;
-	  if ((fabs(tJDS - tJDM) < 0.1) && (smallMooncalDateOffset == 0.0))
+	  if ((fabs(tJDS - tJD + 0.5) < 0.5))
 	    today = TRUE;
 	  else
 	    today = FALSE;
 	  phase = -1;
-	  for (i = 0; i < N_PHASE_DATES; i++)
+	  for (i = 0; i < N_PHASE_DATES; i++) {
 	    if (fabs(nextNew[i] - tJDS - 0.5) < 0.5)
 	      phase = 0;
 	    else if (fabs(nextFirstQ[i] - tJDS - 0.5) < 0.5)
@@ -4841,7 +4856,16 @@ static void drawOptsScreens(void)
 	      phase = 2;
 	    } else if (fabs(nextLastQ[i] - tJDS - 0.5) < 0.5)
 	      phase = 3;
-	  plotDayBox(tJDS, week, weekDay, day, today, phase, blue);
+	    if (((nextNew[i] - tJDS - 0.5) < 0.0) && (fabs(nextNew[i] - tJDS - 0.5) < 29.530589))
+	      lastNewI = i;
+	  }
+	  fLunarDay = -(nextNew[lastNewI] - tJDS - 0.5);
+	  while (fLunarDay < -0.5)
+	    fLunarDay += 29.530589;
+	  lunarDay = (int)(fLunarDay + 0.5);
+	  if (phase == 0)
+	    lunarDay = 0;
+	  plotDayBox(tJDS, week, weekDay, day, today, phase, blue, lunarDay);
 	}
       }
       lastMonth = thisMonth-1;
@@ -5990,7 +6014,7 @@ static void drawOptsScreens(void)
       int navStar, planet, year, month, day, tWidth, tHeight,
 	y, hAD, dD, eD, yLineTop, latDD, latMM, longDD, longMM;
       float dummyFloat, hAM, dM, eM, aD, illum, illum2, ref, latSS, longSS;
-      double rA, dec, az, zA, el, hA, dDec, tR, pi, dummy, tLatitude, tLongitude;
+      double rA, dec, az, zA, el, hA, dDec, tR, pi, dummy, dummy2, dummy3, tLatitude, tLongitude;
       double parallax = 0.0;
       double sD = 0.0;
       char phaseString[25], latString[6], longString[5];
@@ -6050,7 +6074,7 @@ static void drawOptsScreens(void)
       y += tHeight;
       yLineTop = y-9;
       if (!displayIndividualNavObject) {
-	gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 0, y,
+	gdk_draw_string(pixmap, smallFont, gC[OR_BLUE], 0, y,
 			"                         Almanac Data                  Altitude Corrections");
 	y += 12;
 	gdk_draw_string(pixmap, smallFont, gC[OR_CREAM], 0, y,
@@ -6101,7 +6125,7 @@ static void drawOptsScreens(void)
        if (!displayIndividualNavObject || (-(individualNavObject+1) == navStar)) {
 	 planet = navPlanets[navStar];
 	 if (planet == MOON)
-	   moonPosition(tJD, dummy, &rA, &dec, &dummy, &dummy, &tR, &dummyFloat);
+	   moonPosition(tJD, &rA, &dec, &dummy2, &dummy3, &tR, &dummyFloat);
 	 else
 	   vSOPPlanetInfo(dataDir, tJD + deltaT(tJD)/86400.0, vSOP87Mapping[navStar], &rA, &dec, &tR);
 	 azZA(rA, sin(dec), cos(dec), &az, &zA, FALSE);
