@@ -11,6 +11,8 @@ nobase_dist_pkgdata_DATA = \
 	marsVSOPData.bin \
 	jupiterVSOPData.bin \
 	saturnVSOPData.bin \
+	shoreline \
+	lunarEclipseCannon \
 	orreryLaunch \
 	constellations/Andromeda \
 	constellations/Antlia \

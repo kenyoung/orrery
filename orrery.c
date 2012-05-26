@@ -1,5 +1,5 @@
 /*
-  orrery Rev 3.6
+  orrery Rev 3.7
   First Version Aug. 3, 2007
   
   Copyright (C) (2007 ... 2012) Ken Young orrery.moko@gmail.com
@@ -101,7 +101,7 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 
 #define STAR_NAME_V_OFFSET (14) /* Vertical offset of star name from star */
 
-char *orreryVersion = "3.6";
+char *orreryVersion = "3.7";
 char *userDir;            /* Holds the name of the directory holding private config file */
 char *privateCatalogName; /* Holds the full name of the user's private locations catalog */
 char dataDir[100];
@@ -155,8 +155,10 @@ typedef struct orbitPlot {
 orbitPlot orbitPlots[N_SOLAR_SYSTEM_OBJECTS];
 
 int shouldSwitchScreens = FALSE;
-  
-float cYear = 2011.0;
+
+float listStartYear, listEndYear;
+
+float cYear = 2012.0;
 float cMonth = 1.0;
 float cDay = 1.0;
 float cHour = 0.0;
@@ -196,6 +198,10 @@ int jovianMoonsNE          = TRUE;  /* These variables control the orientation o
 int jovianMoonsNW          = FALSE; /* Jovian Moons page                              */
 int jovianMoonsSE          = FALSE;
 int jovianMoonsSW          = FALSE;
+int listLocalEclipsesOnly  = FALSE; /* List only eclipses visible at current location */
+int listPenumbralEclipses  = FALSE; /* Penumbral eclipses are boring                  */
+int listPartialEclipses    = TRUE;  /* Partial eclipses are OK                        */
+int listTotalEclipses      = TRUE;  /* These are the good ones                        */
 
 int useCurrentTime = TRUE;
 int useTextTime = FALSE;
@@ -265,15 +271,10 @@ int landscapeMode = FALSE;
 
 /* Variables used in transverse Mercator projection */
 
-GdkPoint *darkGreyPoints;
-int nDarkGreyPoints;
-GdkPoint *greyPoints;
-int nGreyPoints;
-GdkPoint *whitePoints;
-int nWhitePoints;
+GdkPoint *darkGreyPoints, *greyPoints, *whitePoints;
+int nDarkGreyPoints, nGreyPoints, nWhitePoints;
 
-float mercatorScale;
-float mercatorOffset;
+float mercatorScale, mercatorOffset;
 
 int haveReadStarsFile = FALSE;
 int inFlashlightMode = FALSE;
@@ -291,6 +292,7 @@ int inFlashlightMode = FALSE;
 #define PLANET_PHENOMENA             (11)
 #define JOVIAN_MOONS                 (12)
 #define CELESTIAL_NAVIGATION         (13)
+#define LUNAR_ECLIPSES               (14)
 
 int aboutScreen = ABOUT_SCREEN;
 int displayingAnOptsPage = FALSE;
@@ -332,15 +334,17 @@ int inFullscreenMode = FALSE;
 int fullscreenStateChanging = FALSE;
 
 GdkFont *smallFont, *bigFont;
-GdkGC *gC[N_COLORS], *planetGC;
-GdkGC *starGC[5], *flashlightGC, *aboutGC;
+GdkGC *gC[N_COLORS], *planetGC, *starGC[5], *flashlightGC, *aboutGC;
 GtkWidget *window, *julSpin, *optionsStackable, *extraStackable, *optsStackable,
   *cDateLabel, *cTimeLabel, *julSpinLabel, *regionMenu, *yearSpin, *monthSpin, *daySpin,
   *hourSpin, *minuteSpin, *secondSpin, *mainBox, *drawingArea, *itemsTable, *locationTable,
   *optionsTable, *controlButtonBox, *itemsButton, *locationButton, *timeButton,
   *optionsButton, *wikiButton, *tipsButton, *locationLatName, *locationLongName,
   *longButton, *latButton, *eastButton, *westButton, *northButton, *southButton,
-  *hildonTimeButton, *hildonDateButton, *magButton1, *magButton2; 
+  *hildonTimeButton, *hildonDateButton, *magButton1, *magButton2, *lunarEclipseStackable,
+  *lunarEclipseSelectionLabel, *lunarEclipseSelectionTable, *eclipseTypeButton,
+  *lunarEclipseTypeLabel, *lunarEclipseDateLabel, *lunarEclipseStartYearLabel,
+  *lunarEclipseEndYearLabel, *startYearSpin, *endYearSpin, *rebuildEclipseListButton;
 
 GdkPixmap *planetImages[N_SOLAR_SYSTEM_OBJECTS];      /* Used for Sky plots */
 GdkPixmap *smallPlanetImages[N_SOLAR_SYSTEM_OBJECTS]; /* Used for Solar System plots */
@@ -350,6 +354,7 @@ GdkPixmap *firstPointImage, *meteorRadiantImage[3], *moonImage, *moonImageFlippe
 
 GdkPixmap *pixmap = NULL;
 GdkPixmap *cairoPixmap = NULL;
+GdkPixmap *lunarEclipsePixmap;
 
 /*
   The following structure keeps track of regions on the
@@ -579,6 +584,7 @@ float chosenAz;                          /* New center azimuth selected by user 
 #define TINY_GREEK_FONT_NAME        "Sans 8"
 #define HUGE_PANGO_FONT_NAME        "Sans Bold 78"
 
+int backgroundGC = OR_BLACK;
 cairo_surface_t *cairoSurface = NULL;
 cairo_t *cairoContext = NULL;
 
@@ -603,15 +609,16 @@ int moonImagesRead = FALSE; /* Set TRUE after all moon images have been read in 
 
 int optionsModified = FALSE;
 
-GtkCheckButton *starCheckButton1, *starCheckButton2;
-GtkCheckButton *starNameCheckButton1, *starNameCheckButton2;
-GtkCheckButton *meteorCheckButton1, *meteorCheckButton2;
-GtkCheckButton *planetCheckButton1, *planetCheckButton2;
-GtkCheckButton *greatCirclesCheckButton1, *greatCirclesCheckButton2, *useAsterismsCheckButton;
-GtkCheckButton *deepSkyCheckButton1, *deepSkyCheckButton2, *bayerButton1, *bayerButton2;
-GtkCheckButton *gPSButton, *customLocationButton, *menuLocationButton;
-GtkCheckButton *currentTimeButton, *textTimeButton, *julianTimeButton, *calendarTimeButton;
-GtkWidget *locationNameLabel, *locationNameText;
+GtkCheckButton *starCheckButton1, *starCheckButton2, *starNameCheckButton1,
+  *starNameCheckButton2, *meteorCheckButton1, *meteorCheckButton2,
+  *planetCheckButton1, *planetCheckButton2, *listLocalEclipsesOnlyButton,
+  *listPenumbralEclipsesButton, *listPartialEclipsesButton, *listTotalEclipsesButton,
+  *greatCirclesCheckButton1, *greatCirclesCheckButton2, *useAsterismsCheckButton,
+  *deepSkyCheckButton1, *deepSkyCheckButton2, *bayerButton1, *bayerButton2,
+  *gPSButton, *customLocationButton, *menuLocationButton, *currentTimeButton,
+  *textTimeButton, *julianTimeButton, *calendarTimeButton;
+GtkWidget *locationNameLabel, *locationNameText, *lunarEclipseSeparator1,
+  *lunarEclipseSeparator2, *lunarEclipseSeparator3;
 
 GtkWidget *displayedLocationName;   /* Holds the name of a location selected from menu */
 int locationNameIsDisplayed = FALSE;
@@ -633,6 +640,91 @@ int jovianEvents = FALSE; /* Set TRUE to list events on Jovian moon Page */
 int updateCelestialNavigationScreen = TRUE;
 int displayIndividualNavObject = FALSE;
 int individualNavObject;
+
+/* Eclipse-related variables */
+int displayLunarEclipse = FALSE;
+int selectedLunarEclipse = -1;
+
+/* Variables used to draw world shorelines */
+
+typedef struct shoreSeg {
+  short nVerticies;
+  short *lat;
+  short *lon;
+  struct shoreSeg *next;
+} shoreSeg;
+
+shoreSeg *shoreRoot = NULL;
+
+#define ETA 23.4378527778*DEGREES_TO_RADIANS /* Earth axis inclination */
+#define ETAG 62.3*DEGREES_TO_RADIANS         /* Galactic pole inclination */
+
+/* Lunar Eclipse Constants */
+#define SOLAR_RADIUS            (6.9599e10)       /* cm */
+#define EARTH_EQUATORIAL_RADIUS (6.378164e8)
+#define EARTH_POLAR_RADIUS      (6.356779e8)
+#define MOON_RADIUS             (1.7382e8)
+
+#define PENUMBRAL_LUNAR_ECLIPSE (0x00)
+#define PARTIAL_LUNAR_ECLIPSE   (0x01)
+#define TOTAL_LUNAR_ECLIPSE     (0x02)
+#define N_LUNAR_ECLIPSES       (12064)
+#define N_ECLIPSE_TJDS             (7)
+#define MID_ECLIPSE_TJD            (0)
+#define PEN_ECLIPSE_START_TJD      (1)
+#define PAR_ECLIPSE_START_TJD      (2)
+#define TOT_ECLIPSE_START_TJD      (3)
+#define PEN_ECLIPSE_END_TJD        (4)
+#define PAR_ECLIPSE_END_TJD        (5)
+#define TOT_ECLIPSE_END_TJD        (6)
+/* End of Lunar Eclipse Constants */
+
+typedef struct __attribute__((packed)) lunarEclipse {
+  int   date;      /* Calendar Date                                        */
+  float tDGE;      /* TD of Greatest Eclipse                               */
+  int   dTMinusUT; /* Dynamical TIme (DT) - UT                             */
+  short sarosNum;  /* Saros Number                                         */
+  char  type1;     /* 0 = Penumbral, 1 = Partial, 2 = Total                */
+                   /* Upper nibble:                                        */
+                   /* 0x00 = middle eclipse of Saros Cycle                 */
+                   /* 0x01 = Central total eclipse                         */
+                   /*        (Moon's center passes north of shadow axis).  */
+                   /* 0x02 = Central total eclipse                         */
+                   /*        (Moon's center passes south of shadow axis).  */
+                   /* 0x03 = Total penumbral lunar eclipse.                */
+                   /* 0x04 = Saros series begins                           */
+                   /*        (first penumbral eclipse in series).          */
+                   /* 0x05 = Saros series ends                             */
+                   /*        (last penumbral eclipse in series).           */
+  float penMag;    /* Penumbral magnitude is the fraction of the Moon's    */
+                   /* diameter immersed in the penumbra at the instant of  */
+                   /* greatest eclipse.                                    */
+  float umbMag;    /* Umbral magnitude is the fraction of the Moon's       */
+                   /* diameter immersed in the umbra at the instant of     */
+                   /* greatest eclipse.                                    */
+  float penDur;    /* Penumbral phase duration in minutes                  */
+  float parDur;    /* Partial phase duration in minutes                    */
+  float totDur;    /* Total phase duration in minutes                      */
+  short zenithLat; /* Latitude on Earth where the Moon appears in the      */
+                   /* zenith at instant of greatest eclipse.               */
+  short zenithLon; /* Longitude on Earth where the Moon appears in the     */
+                   /* zenith at instant of greatest eclipse.               */
+} lunarEclipse;
+
+lunarEclipse *lunarEclipses = NULL;
+
+typedef struct eclipseMenuItem {
+  char *name;
+  int key;
+  struct eclipseMenuItem *next;
+} eclipseMenuItem;
+
+eclipseMenuItem *eclipseMenuItemRoot = NULL;
+int nEclipsesForMenu = 0;
+GtkItemFactoryEntry *lunarItemFactoryEntry;
+GtkItemFactory *lunarItemFactory;
+GtkAccelGroup *lunarAccelGroup;
+GtkWidget *lunarMenu;
 
 /*   E N D   O F   G L O B A L   V A R I A B L E   D E C L A R A T I O N S   */
 
@@ -676,6 +768,8 @@ void calculateApparentPosition(double tJD,
 			       double rAJ2000, double decJ2000,
 			       float parallax, float muRA, float muDec,
 			       double *rANow,  double *decNow);
+
+void putOptsPage(int page);
 
 /*   E N D   O F   F U N C T I O N   P R O T O T Y P E S   */
 
@@ -765,7 +859,7 @@ void renderPangoText(char *theText, unsigned short color, int font,
     }
     firstCall = FALSE;
   } else
-    gdk_draw_rectangle(cairoPixmap, gC[OR_BLACK], TRUE, RENDER_CENTER_X+xC, RENDER_CENTER_Y+yC,
+    gdk_draw_rectangle(cairoPixmap, gC[backgroundGC], TRUE, RENDER_CENTER_X+xC, RENDER_CENTER_Y+yC,
 		       wC, hC);
   layout = pango_layout_new(pangoContext[font]);
   if (unlikely(layout == NULL)) {
@@ -1074,6 +1168,13 @@ void doubleNormalize0to2pi(double *angle)
     while (*angle < 0.0)
       *angle += M_2PI;
   }
+}
+
+void doubleNormalizeMinusPiToPi(double *angle)
+{
+  doubleNormalize0to2pi(angle);
+  while (*angle > M_PI)
+    *angle -= M_2PI;
 }
 
 void floatNormalize0to24(float *hour)
@@ -1834,7 +1935,6 @@ static void showTime(void)
 */
 static void ecliptic(float lambda, double *ra, double *dec, double *cDec)
 
-#define ETA 23.4378527778*DEGREES_TO_RADIANS /* Earth axis inclination */
 {
   static int   firstCall = TRUE;
   static float sinEta, cosEta, cosDec;
@@ -1865,7 +1965,6 @@ static void ecliptic(float lambda, double *ra, double *dec, double *cDec)
 */
 static void galactic(float lambda, double *ra, double *dec, double *cDec)
 
-#define ETAG 62.3*DEGREES_TO_RADIANS
 {
   static int   firstCall = TRUE;
   static float sinEta, cosEta, cosDec, rAOffset, lambdaOffset;
@@ -3784,6 +3883,18 @@ void radiansToHHMMSS(double radians, int *hH, int *mM, double *sS)
   *sS = (hours - (double)(*hH) - (double)(*mM)/60.0)*3600.0;
 }
 
+void tJDToHHMMSS(double tJD, int *hH, int *mM, double *sS)
+{
+  double dayFrac;
+
+  dayFrac = tJD - (double)((int)tJD) + 0.5;
+  while (dayFrac < 0.0)
+    dayFrac += 1.0;
+  while (dayFrac > 1.0)
+    dayFrac -= 1.0;
+  radiansToHHMMSS(M_2PI*dayFrac, hH, mM, sS);
+}
+
 /*
   Read in all the moon image files into pixmaps.   They are
   used for the monthly moon calendar, etc.
@@ -3978,6 +4089,202 @@ int compareStarNames(const void *star1, const void *star2)
     result = strcmp(name1, name2);
   free(name1); free(name2);
   return(result);
+}
+
+#define EARTH_MAP_WIDTH  (480.0)
+#define EARTH_MAP_HEIGHT (250.0)
+#define EARTH_MAP_OFFSET (770.0)
+#define UMBRA_MAP_WIDTH  (480.0)
+#define UMBRA_MAP_HEIGHT (216.0)
+#define UMBRA_MAP_OFFSET (410.0)
+#define UMBRA_MAP_SCALE  (UMBRA_MAP_HEIGHT/(14.0*MOON_RADIUS))
+#define ATMOSPHERIC_UMBRA_EXPANSION (1.05)
+/*
+  C M  T O  P I X E L S
+
+  Convert positions relative to the center of the earth's umbra,
+in cm, to pixels.
+*/
+void cmToPixels(float x, float y, gint *px, gint *py)
+{
+  *px = (int)( x * UMBRA_MAP_SCALE + UMBRA_MAP_WIDTH*0.5);
+  *py = (int)(-y * UMBRA_MAP_SCALE + UMBRA_MAP_OFFSET);
+}
+
+/*
+  L A T  L O N  T O  P I X E L S
+
+  Convert latitude and longitude in radians to x and y pixels
+  on the display.   Lat runs from -pi/2 to pi/2, long runs
+  from -pi to pi.
+*/
+void latLonToPixels(float lat, float lon, int *x, int *y)
+{
+  *y = -((lat/M_PI  + 0.5)*EARTH_MAP_HEIGHT) + EARTH_MAP_HEIGHT;
+  *x = (lon/M_2PI + 0.5)*EARTH_MAP_WIDTH;
+}
+
+/*
+  Write out the values that the user can set.
+*/
+void writeConfigFile(void)
+{
+  int i;
+  char tempName[MAX_FILE_NAME_SIZE], newName[MAX_FILE_NAME_SIZE], oldName[MAX_FILE_NAME_SIZE];
+  FILE *newConfigFile;
+
+  sprintf(newName, "%s/config.new", dataDir);
+  newConfigFile = fopen(newName, "w");
+  if (unlikely(newConfigFile == NULL)) {
+    perror("config.new");
+    return;
+  }
+  fprintf(newConfigFile, "CHINESE_COLOR_SCHEME %d\n", chineseColorScheme);
+  fprintf(newConfigFile, "LIMITING_MAGNITUDE1 %6.2f\n", limitingMagnitude1);
+  fprintf(newConfigFile, "LIMITING_MAGNITUDE2 %6.2f\n", limitingMagnitude2);
+  fprintf(newConfigFile, "SHOW_GREAT_CIRCLES1 %d\n", showGreatCircles1);
+  fprintf(newConfigFile, "SHOW_GREAT_CIRCLES2 %d\n", showGreatCircles2);
+  fprintf(newConfigFile, "USE_ASTERISMS %d\n", useAsterisms);
+  fprintf(newConfigFile, "SHOW_DEEP_SKY1 %d\n", showDeepSky1);
+  fprintf(newConfigFile, "SHOW_DEEP_SKY2 %d\n", showDeepSky2);
+  fprintf(newConfigFile, "SHOW_BAYER1 %d\n", showBayer1);
+  fprintf(newConfigFile, "SHOW_BAYER2 %d\n", showBayer2);
+  fprintf(newConfigFile, "SHOW_STARS1 %d\n", showStars1);
+  fprintf(newConfigFile, "SHOW_STARS2 %d\n", showStars2);
+  fprintf(newConfigFile, "SHOW_PLANETS1 %d\n", showPlanets1);
+  fprintf(newConfigFile, "SHOW_PLANETS2 %d\n", showPlanets2);
+  fprintf(newConfigFile, "SHOW_STAR_NAMES1 %d\n", showNames1);
+  fprintf(newConfigFile, "SHOW_STAR_NAMES2 %d\n", showNames2);
+  fprintf(newConfigFile, "SHOW_METEORS1 %d\n", showMeteors1);
+  fprintf(newConfigFile, "SHOW_METEORS2 %d\n", showMeteors2);
+  fprintf(newConfigFile, "USE_GPSD %d\n", useGPSD);
+  fprintf(newConfigFile, "INITIAL_AZIMUTH %7.2f\n", initialAzimuth);
+  fprintf(newConfigFile, "DEBUG_MESSAGES_ON %d\n", debugMessagesOn);
+  fprintf(newConfigFile, "JOVIAN_MOONS_NE %d\n", jovianMoonsNE);
+  fprintf(newConfigFile, "JOVIAN_MOONS_NW %d\n", jovianMoonsNW);
+  fprintf(newConfigFile, "JOVIAN_MOONS_SE %d\n", jovianMoonsSE);
+  fprintf(newConfigFile, "JOVIAN_MOONS_SW %d\n", jovianMoonsSW);
+  fprintf(newConfigFile, "LIST_LOCAL_ECLIPSES_ONLY %d\n", listLocalEclipsesOnly);
+  fprintf(newConfigFile, "LIST_PENUMBRAL_ECLIPSES %d\n", listPenumbralEclipses);
+  fprintf(newConfigFile, "LIST_PARTIAL_ECLIPSES %d\n", listPartialEclipses);
+  fprintf(newConfigFile, "LIST_TOTAL_ECLIPSES %d\n", listTotalEclipses);
+  sprintf(tempName, "%s", locationName);
+  for (i = 0; i < strlen(tempName); i++)
+    if (tempName[i] == ' ')
+      tempName[i] = '_';
+  fprintf(newConfigFile, "DEFAULT_LOCATION_NAME %s\n", tempName);
+  fprintf(newConfigFile, "DEFAULT_LOCATION_LATITUDE %f\n", latitude/DEGREES_TO_RADIANS);
+  fprintf(newConfigFile, "DEFAULT_LOCATION_LONGITUDE %f\n", longitude/DEGREES_TO_RADIANS);
+  fclose(newConfigFile);
+  sprintf(oldName, "%s/config", dataDir);
+  rename(newName, oldName);
+}
+
+/*
+  C H E C K  L U N A R  E C L I P S E  S E T T I N G S
+
+  Callback function to read the settings to select an eclipse.
+*/
+void checkLunarEclipseSettings(void)
+{
+  int somethingChanged = FALSE;
+  int oldValue, i;
+  eclipseMenuItem *menuItem, *lastItem = NULL;
+
+  oldValue = listLocalEclipsesOnly;
+  if (gtk_toggle_button_get_active((GtkToggleButton *)listLocalEclipsesOnlyButton))
+    listLocalEclipsesOnly = TRUE;
+  else
+    listLocalEclipsesOnly = FALSE;
+  if (oldValue != listLocalEclipsesOnly)
+    somethingChanged = TRUE;
+
+  oldValue = listPenumbralEclipses;
+  if (gtk_toggle_button_get_active((GtkToggleButton *)listPenumbralEclipsesButton))
+    listPenumbralEclipses = TRUE;
+  else
+    listPenumbralEclipses = FALSE;
+  if (oldValue != listPenumbralEclipses)
+    somethingChanged = TRUE;
+  oldValue = listPartialEclipses;
+  if (gtk_toggle_button_get_active((GtkToggleButton *)listPartialEclipsesButton))
+    listPartialEclipses = TRUE;
+  else
+    listPartialEclipses = FALSE;
+  if (oldValue != listPartialEclipses)
+    somethingChanged = TRUE;
+  oldValue = listTotalEclipses;
+  if (gtk_toggle_button_get_active((GtkToggleButton *)listTotalEclipsesButton))
+    listTotalEclipses = TRUE;
+  else
+    listTotalEclipses = FALSE;
+  if (oldValue != listTotalEclipses)
+    somethingChanged = TRUE;
+
+  listStartYear = gtk_spin_button_get_value((GtkSpinButton *)startYearSpin);
+  listEndYear   = gtk_spin_button_get_value((GtkSpinButton *)endYearSpin);
+
+  /* Do garbage collection */
+  lastItem = eclipseMenuItemRoot;
+  while (lastItem != NULL) {
+    menuItem = lastItem;
+    lastItem = lastItem->next;
+    free(menuItem->name);
+    free(menuItem);
+  }
+  eclipseMenuItemRoot = NULL;
+  for (i = 0; i <= nEclipsesForMenu; i++) {
+    free(lunarItemFactoryEntry[i].path);
+    if (lunarItemFactoryEntry[i].item_type != NULL)
+      free(lunarItemFactoryEntry[i].item_type);
+  }
+  free(lunarItemFactoryEntry);
+  gtk_widget_destroy(optsStackable);
+  if (somethingChanged)
+    writeConfigFile();
+}
+
+void lunarCategoryCallback(gpointer callbackData, guint callbackAction, GtkWidget *widget)
+{
+  displayLunarEclipse = TRUE;
+  selectedLunarEclipse = callbackAction;
+  gtk_widget_destroy(lunarEclipseStackable);
+  putOptsPage(LUNAR_ECLIPSES);
+}
+
+void rebuildEclipseListCallback(gpointer callbackData, guint callbackAction, GtkWidget *widget)
+{
+  gtk_widget_destroy(lunarEclipseStackable);
+  putOptsPage(LUNAR_ECLIPSES);
+}
+
+/*
+  R E A D  E C L I P S E  D A T A
+
+  Read in the binary file that contains the Cannon of Lunar Eclipses.
+*/
+void readEclipseData(void)
+{
+  lunarEclipses = (lunarEclipse *)malloc(N_LUNAR_ECLIPSES*sizeof(lunarEclipse));
+  if (lunarEclipses == NULL) {
+    perror("Allocating lunarEclipses array");
+    exit(ERROR_EXIT);
+  } else {
+    int i, fD;
+    char cannonFileName[MAX_FILE_NAME_SIZE];
+    
+    sprintf(cannonFileName, "%s/lunarEclipseCannon", dataDir);
+    fD = open(cannonFileName, O_RDONLY);
+    if (fD < 0) {
+      perror(cannonFileName);
+      exit(ERROR_EXIT);
+    } else {
+      for (i = 0; i < N_LUNAR_ECLIPSES; i++) {
+	read(fD, &lunarEclipses[i], sizeof(lunarEclipse));
+      }
+    }
+    close(fD);
+  }
 }
 
 /*
@@ -7047,6 +7354,1164 @@ static void drawOptsScreens(void)
       }
     }
     break;
+  case LUNAR_ECLIPSES:
+    {
+      int i, j, eclipseType;
+
+      if (displayLunarEclipse) {
+	static int haveReadShorelineFile = FALSE;
+	int mM, dD, yYYY, dTMinusUT, hH, minute, sS, nShadedRegions, nPoints,
+	  penColor, parColor, totColor, region, xHome, pass, mapWidth, moonRadiusPixels,
+	  maxEclipseColor, lineOffset, lineWidth;
+	int nSteps = 500;
+	int lineSkip = 30;
+	float lat, lon, step, f1, a, b, theta, eclipticSlope, eclipticX, eclipticY,
+	  shadowPlaneX, shadowPlaneY, moonPathAngle;
+	float lastLon = 0.0;
+	double penEclipseStartTJD, penEclipseEndTJD, parEclipseStartTJD, parEclipseEndTJD,
+	  totEclipseStartTJD, totEclipseEndTJD, tDGE, eclipseUTHours, d1, d2, d3, moonDistanceKM,
+	  eclipseTJD, rA, dec, sublunarLat, sublunarLon, moonDistanceCM, sunRA, sunDec,
+	  sunDistanceKM, sunDistanceCM, rUmbraEquatorial, rUmbraPolar, rPenumbraEquatorial, rPenumbraPolar,
+	  lEEquatorial, lEPolar, lPEquatorial, lPPolar, shadowPlaneRA, shadowPlaneDec, x0, y0;
+	char title[100], scratchString[100], typeString[17];
+	shoreSeg *segment;
+	gint shadowPlanePX, shadowPlanePY;
+	GdkPoint verticies[504];
+	GdkGC *eGC;
+	
+	if (chineseColorScheme)
+	  eGC = gC[OR_YELLOW];
+	else
+	  eGC = gC[OR_RED];
+	if (timerID != (guint)0) {
+	  g_source_remove(timerID);
+	  timerID = (guint)0;
+	}
+	if (lunarEclipsePixmap == NULL) {
+	  lunarEclipsePixmap = gdk_pixmap_new(drawingArea->window, 
+					      (int)EARTH_MAP_WIDTH, (int)EARTH_MAP_HEIGHT, -1);
+	  if (lunarEclipsePixmap == NULL) {
+	    perror("lunarEclipsePixmap");
+	    return;
+	  }
+	}
+	if (!haveReadShorelineFile) {
+	  int shoreFD;
+	  char fileName[MAX_FILE_NAME_SIZE];
+	  
+	  /* Read in the binary file containing vectors to plot the earth's shorelines */
+	  sprintf(fileName, "%s/shoreline", dataDir);
+	  shoreFD = open(fileName, O_RDONLY);
+	  if (shoreFD > 0) {
+	    short nPairs;
+	    int i, nRead;
+	    shoreSeg *newSeg, *lastSeg = NULL;
+	    
+	    nRead = read(shoreFD, &nPairs, 2);
+	    while (nRead > 0) {
+	      newSeg = (shoreSeg *)malloc(sizeof(shoreSeg));
+	      if (newSeg != NULL) {
+		newSeg->nVerticies = nPairs;
+		newSeg->lat = malloc(nPairs*sizeof(short));
+		newSeg->lon = malloc(nPairs*sizeof(short));
+		for (i = 0; i < nPairs; i++) {
+		  read(shoreFD, &newSeg->lon[i], 2);
+		  read(shoreFD, &newSeg->lat[i], 2);
+		}
+		newSeg->next = NULL;
+		if (shoreRoot == NULL)
+		  shoreRoot = newSeg;
+		else
+		  lastSeg->next = newSeg;
+		lastSeg = newSeg;
+	      } else
+		perror("malloc of newSeg");
+	      nRead = read(shoreFD, &nPairs, 2);
+	    }
+	    close(shoreFD);
+	    haveReadShorelineFile = TRUE;
+	  } else
+	    perror("shoreline");
+	}
+	gdk_draw_rectangle(lunarEclipsePixmap, gC[OR_DARK_GREY], TRUE, 0, 0,
+			   displayWidth, EARTH_MAP_HEIGHT);
+
+	/*
+	  Calculate the time of maximum eclipse, and the earch longitude and latitude
+	  of the point directly under the moon (subLunarxxx) at the time of
+	  maximum eclipse.
+	*/
+	yYYY        =  lunarEclipses[selectedLunarEclipse].date/0x10000;
+	mM          = (lunarEclipses[selectedLunarEclipse].date & 0xff00)/0x100;
+	dD          =  lunarEclipses[selectedLunarEclipse].date & 0xff;
+	eclipseType =  lunarEclipses[selectedLunarEclipse].type1 & 0xf;
+	tDGE        =  lunarEclipses[selectedLunarEclipse].tDGE;
+	dTMinusUT   =  lunarEclipses[selectedLunarEclipse].dTMinusUT;
+	eclipseUTHours = (tDGE - dTMinusUT)/3600.0;
+	hH = (int)eclipseUTHours;
+	minute = (int)((eclipseUTHours - (double)hH) * 60.0);
+	sS = (int)((eclipseUTHours - (double)hH - ((double)minute)/60.0)*3600.0 + 0.5);
+	eclipseTJD = buildTJD(yYYY-1900, mM-1, dD, hH, minute, sS, 0);
+	vSOPPlanetInfo(dataDir, eclipseTJD, SUN, &sunRA, &sunDec, &sunDistanceKM);
+	eclipticSlope = tanf(ETA*cos(sunRA));
+	eclipticX = UMBRA_MAP_WIDTH*0.5;
+	eclipticY = eclipticX * eclipticSlope;
+	if (fabs(eclipticY) > UMBRA_MAP_HEIGHT*0.5) {
+	  eclipticY = UMBRA_MAP_HEIGHT * 0.5;
+	  eclipticX = eclipticY / eclipticSlope;
+	}
+ 	moonPosition(eclipseTJD, &rA, &dec, &d1, &d2, &moonDistanceKM, &f1);
+	shadowPlaneRA = sunRA - M_PI - rA; shadowPlaneDec = -sunDec - dec;
+	moonDistanceCM = moonDistanceKM * 1.0e5;
+	sunDistanceCM  = sunDistanceKM  * AU * 1.0e11;
+	moonRadiusPixels = 1 + (int)(atan(MOON_RADIUS/moonDistanceCM)*moonDistanceCM*UMBRA_MAP_SCALE);
+	shadowPlaneX =  sin(shadowPlaneRA)*moonDistanceCM;
+	shadowPlaneY = -sin(shadowPlaneDec)*moonDistanceCM;
+	cmToPixels(shadowPlaneX, shadowPlaneY, &shadowPlanePX, &shadowPlanePY);
+	switch (eclipseType) {
+	case TOTAL_LUNAR_ECLIPSE:
+	  strcpy(typeString, "Total Lunar");
+	  break;
+	case PARTIAL_LUNAR_ECLIPSE:
+	  strcpy(typeString, "Partial Lunar");
+	  break;
+	default:
+	  strcpy(typeString, "Penumbral");
+	}
+	sprintf(title, "%s Eclipse %s %d, %d", typeString,
+		monthName[mM-1], dD, yYYY);
+	backgroundGC = OR_WHITE;
+	gdk_draw_rectangle(pixmap, gC[backgroundGC], TRUE, 0, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2,
+			   UMBRA_MAP_WIDTH, UMBRA_MAP_HEIGHT);
+	gdk_draw_line(pixmap, gC[OR_BLACK], 45, UMBRA_MAP_OFFSET, UMBRA_MAP_WIDTH, UMBRA_MAP_OFFSET);
+	renderPangoText("North", OR_BLACK, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, UMBRA_MAP_WIDTH-90, UMBRA_MAP_OFFSET - 96,
+			0.0, TRUE, 1);
+	renderPangoText("North", OR_BLACK, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, UMBRA_MAP_WIDTH-90, UMBRA_MAP_OFFSET - 96,
+			0.0, TRUE, 1);
+	renderPangoText("East", OR_BLACK, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, 20, UMBRA_MAP_OFFSET,
+			0.0, TRUE, 0);
+	renderPangoText("East", OR_BLACK, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, 20, UMBRA_MAP_OFFSET,
+			0.0, TRUE, 0);
+	/*
+	  lEEquatorial is the distance from the Sun to the end of the umbra, in the
+	  earth's equatorial plane.
+	*/
+	lEEquatorial = sunDistanceCM * (1.0 + EARTH_EQUATORIAL_RADIUS/(SOLAR_RADIUS-EARTH_EQUATORIAL_RADIUS));
+	lEPolar      = sunDistanceCM * (1.0 + EARTH_POLAR_RADIUS     /(SOLAR_RADIUS-EARTH_POLAR_RADIUS));
+	/* Calculate radii for the earth's umbra */
+	rUmbraEquatorial  = SOLAR_RADIUS * (lEEquatorial - sunDistanceCM - moonDistanceCM)/lEEquatorial;
+	rUmbraEquatorial *= ATMOSPHERIC_UMBRA_EXPANSION;
+	rUmbraPolar       = SOLAR_RADIUS * (lEPolar      - sunDistanceCM - moonDistanceCM)/lEPolar;
+	rUmbraPolar      *= ATMOSPHERIC_UMBRA_EXPANSION;
+	/*
+	  lPEquatorial is the distance from the Sun to the apex of the cone whose
+	  base is the intersection of the penumbra with the eclipse plane.
+	*/
+	lPEquatorial = SOLAR_RADIUS * sunDistanceCM / (SOLAR_RADIUS + EARTH_EQUATORIAL_RADIUS);
+	lPPolar      = SOLAR_RADIUS * sunDistanceCM / (SOLAR_RADIUS + EARTH_POLAR_RADIUS);
+	/* Calculate radii for the earth's penumbra */
+	rPenumbraEquatorial  = SOLAR_RADIUS * (sunDistanceCM - lPEquatorial + moonDistanceCM)/lPEquatorial;
+	rPenumbraEquatorial *= ATMOSPHERIC_UMBRA_EXPANSION;
+	rPenumbraPolar       = SOLAR_RADIUS * (sunDistanceCM - lPPolar + moonDistanceCM)     /lPPolar;
+	rPenumbraPolar      *= ATMOSPHERIC_UMBRA_EXPANSION;
+	/* Draw the penumbra */
+	a = (float)rPenumbraEquatorial; b = (float)rPenumbraPolar;
+	nPoints = 0;
+	for (theta = 0; theta < M_2PI; theta += M_2PI*0.02) {
+	  float x, y;
+
+	  x = a*cosf(theta); y = b*sinf(theta);
+	  cmToPixels(x, y, &verticies[nPoints].x, &verticies[nPoints].y);
+	  nPoints++;
+	}
+	gdk_draw_polygon(pixmap, gC[OR_LIGHT_GREY], TRUE, verticies, nPoints);
+	/* Draw the umbra */
+	a = (float)rUmbraEquatorial; b = (float)rUmbraPolar;
+	nPoints = 0;
+	for (theta = 0; theta < M_2PI; theta += M_2PI*0.02) {
+	  float x, y;
+
+	  x = a*cosf(theta); y = b*sinf(theta);
+	  cmToPixels(x, y, &verticies[nPoints].x, &verticies[nPoints].y);
+	  nPoints++;
+	}
+	gdk_draw_polygon(pixmap, gC[OR_DARK_GREY], TRUE, verticies, nPoints);
+	eclipticSlope = eclipticY/(UMBRA_MAP_HEIGHT*0.5);
+	if (eclipticY < 0.0) {
+	  int offset;
+
+	  if (eclipticY > -25.0)
+	    offset = -25;
+	  else
+	    offset = (int)eclipticY;
+	  if (offset > 80)
+	    offset = 45;
+	  if (offset < -80)
+	    offset = -45;
+	  renderPangoText("Ecliptic", OR_RED, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, UMBRA_MAP_WIDTH - 70, UMBRA_MAP_OFFSET - offset,
+			  -ETA*cosf(sunRA), TRUE, 1);
+	  renderPangoText("Ecliptic", OR_RED, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, UMBRA_MAP_WIDTH - 70, UMBRA_MAP_OFFSET - offset,
+			  -ETA*cosf(sunRA), TRUE, 1);
+	} else {
+	  int offset;
+
+	  if (eclipticY < 25.0)
+	    offset = 25;
+	  else
+	    offset = (int)eclipticY;
+	  if (offset > 80)
+	    offset = 45;
+	  if (offset < -80)
+	    offset = -45;
+	  renderPangoText("Ecliptic", OR_RED, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, UMBRA_MAP_WIDTH - 70, UMBRA_MAP_OFFSET - offset,
+			  -ETA*cosf(sunRA), TRUE, 1);
+	  renderPangoText("Ecliptic", OR_RED, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, UMBRA_MAP_WIDTH - 70, UMBRA_MAP_OFFSET - offset,
+			  -ETA*cosf(sunRA), TRUE, 1);
+	}
+	backgroundGC = OR_BLACK;
+	gdk_draw_line(pixmap, eGC, -eclipticX + UMBRA_MAP_WIDTH*0.5,
+		      eclipticY + UMBRA_MAP_OFFSET,
+		      eclipticX + UMBRA_MAP_WIDTH*0.5,
+		      -eclipticY + UMBRA_MAP_OFFSET);
+	gdk_draw_line(pixmap, gC[OR_BLACK], UMBRA_MAP_WIDTH/2 - 5, UMBRA_MAP_OFFSET,
+		      UMBRA_MAP_WIDTH/2 + 5, UMBRA_MAP_OFFSET);
+	gdk_draw_line(pixmap, gC[OR_BLACK], UMBRA_MAP_WIDTH/2, UMBRA_MAP_OFFSET - 5,
+		      UMBRA_MAP_WIDTH/2, UMBRA_MAP_OFFSET + 5);
+	myLST = lSTAtTJD(eclipseTJD);
+	sublunarLat = dec;
+	sublunarLon = longitude - myLST + rA;
+	doubleNormalizeMinusPiToPi(&sublunarLon);
+	step = M_2PI/((float)nSteps);
+	penEclipseStartTJD = eclipseTJD - lunarEclipses[selectedLunarEclipse].penDur/2880.0;
+	penEclipseEndTJD   = eclipseTJD + lunarEclipses[selectedLunarEclipse].penDur/2880.0;
+	parEclipseStartTJD = eclipseTJD - lunarEclipses[selectedLunarEclipse].parDur/2880.0;
+	parEclipseEndTJD   = eclipseTJD + lunarEclipses[selectedLunarEclipse].parDur/2880.0;
+	totEclipseStartTJD = eclipseTJD - lunarEclipses[selectedLunarEclipse].totDur/2880.0;
+	totEclipseEndTJD   = eclipseTJD + lunarEclipses[selectedLunarEclipse].totDur/2880.0;
+	penColor = parColor = totColor = 0;
+	/* Select which color to use for each eclipse phase */
+	switch (eclipseType) {
+	case TOTAL_LUNAR_ECLIPSE:
+	  nShadedRegions  = 6;
+	  penColor        = OR_GREY;
+	  parColor        = OR_LIGHT_GREY;
+	  totColor        = OR_WHITE;
+	  maxEclipseColor = OR_YELLOW;
+	  lineOffset      = 10 + 3*lineSkip;
+	  break;
+	case PARTIAL_LUNAR_ECLIPSE:
+	  nShadedRegions  = 4;
+	  penColor        = OR_LIGHT_GREY;
+	  parColor        = OR_WHITE;
+	  maxEclipseColor = OR_YELLOW;
+	  lineOffset      = 10 + 2*lineSkip;
+	  break;
+	default:
+	  nShadedRegions  = 2;
+	  penColor        = OR_WHITE;
+	  maxEclipseColor = OR_BLACK;
+	  lineOffset      = 10 + lineSkip;
+	}
+	/* Draw the moon position in the shadow at maximum eclipse */
+	gdk_draw_arc(pixmap, gC[maxEclipseColor], FALSE, shadowPlanePX - moonRadiusPixels,
+		     shadowPlanePY-moonRadiusPixels,
+		     2*moonRadiusPixels, 2*moonRadiusPixels, 0, FULL_CIRCLE);
+	renderPangoText("Maximum Eclipse at", OR_BLUE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, shadowPlanePX - 68, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset - 15,
+			0.0, TRUE, 1);
+	renderPangoText("Maximum Eclipse at", OR_BLUE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, shadowPlanePX - 68, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset - 15,
+			0.0, TRUE, 1);
+	sprintf(scratchString, "%02d:%02d:%02d", hH, minute, sS);
+	renderPangoText(scratchString, OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, shadowPlanePX + 95, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset - 15,
+			0.0, TRUE, 1);
+	renderPangoText("UT", OR_BLUE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, shadowPlanePX + 164, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset - 15,
+			0.0, TRUE, 1);
+	gdk_draw_line(pixmap, gC[OR_GREEN],
+		      shadowPlanePX, shadowPlanePY - moonRadiusPixels - 5,
+		      shadowPlanePX, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset);
+	verticies[0].x = shadowPlanePX;     verticies[0].y = shadowPlanePY - moonRadiusPixels - 5;
+	verticies[1].x = shadowPlanePX - 4; verticies[1].y = shadowPlanePY - moonRadiusPixels - 19;
+	verticies[2].x = shadowPlanePX + 4; verticies[2].y = shadowPlanePY - moonRadiusPixels - 19;
+	lineWidth = 360;
+	gdk_draw_line(pixmap, gC[OR_GREEN],
+		      shadowPlanePX - lineWidth/2, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset,
+		      shadowPlanePX + lineWidth/2, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset);
+	gdk_draw_polygon(pixmap, gC[OR_GREEN], TRUE, verticies, 3);
+	/*
+	  Now draw the circles for first and last contact with the penumbra and
+	  (if appropriate) umbra.
+	*/
+	for (pass = 0; pass < 2; pass++) {
+	  int lineSign, mM, textOffset, timeOffset;
+	  double hours;
+
+	  if (pass == 0)
+	    lineSign = 1;
+	  else
+	    lineSign = -1;
+	  for (region = 0; region < nShadedRegions/2; region++) {
+	    int color = 0;
+	    double tJD = 0;;
+	    
+	    if (region == 0) {
+	      if (pass == 0) {
+		tJD = penEclipseStartTJD;
+		strcpy(typeString, "Pen. Starts");
+		textOffset = 375;
+		timeOffset = 76;
+	      } else {
+		tJD = penEclipseEndTJD;
+		strcpy(typeString, "Pen. Ends");
+		textOffset = 50;
+		timeOffset = 71;
+	      }
+	      color = OR_BLACK;
+	      lineOffset = 10;
+	    } else if (region == 1) {
+	      if (pass == 0) {
+		tJD = parEclipseStartTJD;
+		strcpy(typeString, "Partial Starts");
+		textOffset = 366;
+		timeOffset = 85;
+	      } else {
+		tJD = parEclipseEndTJD;
+		strcpy(typeString, "Partial Ends");
+		textOffset = 59;
+		timeOffset = 81;
+	      }
+	      color = OR_BLACK;
+	      lineOffset = 10 + lineSkip;
+	    } else {
+	      if (pass == 0) {
+		tJD = totEclipseStartTJD;
+		strcpy(typeString, "Total Eclipse Starts");
+		textOffset = 340;
+		timeOffset = 111;
+	      } else {
+		tJD = totEclipseEndTJD;
+		strcpy(typeString, "Total Eclipse Ends");
+		textOffset = 84;
+		timeOffset = 107;
+	      }
+	      color = maxEclipseColor;
+	      lineOffset = 10 + 2*lineSkip;
+	    }
+	    hours = 24.0*(tJD - (double)((int)tJD)) - 12.0;
+	    if (hours < 0.0)
+	      hours += 24.0;
+	    hH = (int)hours; mM = (int)((hours - (double)hH)*60.0 + 0.5);
+	    if (mM >= 60)
+	      mM = 59;
+	    renderPangoText(typeString, OR_BLUE, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, textOffset,
+			    UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset - 12,
+			    0.0, TRUE, 1);
+	    sprintf(scratchString, "%02d:%02d", hH, mM);
+	    renderPangoText(scratchString, OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, textOffset + timeOffset,
+			    UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset - 12,
+			    0.0, TRUE, 1);
+	    moonPosition(tJD, &rA, &dec, &d1, &d2, &moonDistanceKM, &f1);
+	    moonDistanceCM = moonDistanceKM * 1.0e5;
+	    vSOPPlanetInfo(dataDir, tJD, SUN, &sunRA, &sunDec, &sunDistanceKM);
+	    shadowPlaneRA = sunRA - M_PI - rA; shadowPlaneDec = -sunDec - dec;
+	    shadowPlaneX =  sin(shadowPlaneRA)*moonDistanceCM;
+	    shadowPlaneY = -sin(shadowPlaneDec)*moonDistanceCM;
+	    cmToPixels(shadowPlaneX, shadowPlaneY, &shadowPlanePX, &shadowPlanePY);
+	    gdk_draw_arc(pixmap, gC[color], FALSE, shadowPlanePX - moonRadiusPixels,
+			 shadowPlanePY-moonRadiusPixels,
+			 2*moonRadiusPixels, 2*moonRadiusPixels, 0, FULL_CIRCLE);
+	    gdk_draw_line(pixmap, gC[OR_GREEN],
+			  shadowPlanePX, shadowPlanePY - moonRadiusPixels - 5,
+			  shadowPlanePX, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset);
+	    verticies[0].x = shadowPlanePX;     verticies[0].y = shadowPlanePY - moonRadiusPixels - 5;
+	    verticies[1].x = shadowPlanePX - 4; verticies[1].y = shadowPlanePY - moonRadiusPixels - 19;
+	    verticies[2].x = shadowPlanePX + 4; verticies[2].y = shadowPlanePY - moonRadiusPixels - 19;
+	    gdk_draw_polygon(pixmap, gC[OR_GREEN], TRUE, verticies, 3);
+	    gdk_draw_line(pixmap, gC[OR_GREEN],
+			  shadowPlanePX,                      UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset,
+			  shadowPlanePX + lineSign*lineWidth, UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset);
+	  }
+	}
+	/* Now draw a line along the Moon's path */
+	d3 = eclipseTJD - 0.17;
+	moonPosition(d3, &rA, &dec, &d1, &d2, &moonDistanceKM, &f1);
+	moonDistanceCM = moonDistanceKM * 1.0e5;
+	vSOPPlanetInfo(dataDir, d3, SUN, &sunRA, &sunDec, &sunDistanceKM);
+	shadowPlaneRA = sunRA - M_PI - rA; shadowPlaneDec = -sunDec - dec;
+	shadowPlaneX =  sin(shadowPlaneRA)*moonDistanceCM;
+	shadowPlaneY = -sin(shadowPlaneDec)*moonDistanceCM;
+	x0 = shadowPlaneX; y0 = shadowPlaneY;
+	cmToPixels(shadowPlaneX, shadowPlaneY, &verticies[1].x, &verticies[1].y);
+	d3 = eclipseTJD + 0.25;
+	moonPosition(d3, &rA, &dec, &d1, &d2, &moonDistanceKM, &f1);
+	moonDistanceCM = moonDistanceKM * 1.0e5;
+	vSOPPlanetInfo(dataDir, d3, SUN, &sunRA, &sunDec, &sunDistanceKM);
+	shadowPlaneRA = sunRA - M_PI - rA; shadowPlaneDec = -sunDec - dec;
+	shadowPlaneX =  sin(shadowPlaneRA)*moonDistanceCM;
+	shadowPlaneY = -sin(shadowPlaneDec)*moonDistanceCM;
+	cmToPixels(shadowPlaneX, shadowPlaneY, &verticies[0].x, &verticies[0].y);
+	gdk_draw_line(pixmap, gC[OR_DARK_BLUE_GREEN], verticies[0].x, verticies[0].y
+		      ,verticies[1].x, verticies[1].y);
+	moonPathAngle = atan2f(y0-shadowPlaneY, shadowPlaneX-x0);
+	cmToPixels(shadowPlaneX-4.0e8*cos( 0.25+moonPathAngle),
+		   shadowPlaneY+4.0e8*sin( 0.25+moonPathAngle),
+		   &verticies[1].x, &verticies[1].y);
+	cmToPixels(shadowPlaneX-4.0e8*cos(-0.25+moonPathAngle),
+		   shadowPlaneY+4.0e8*sin(-0.25+moonPathAngle),
+		   &verticies[2].x, &verticies[2].y);
+	gdk_draw_polygon(pixmap, gC[OR_DARK_BLUE_GREEN], TRUE, verticies, 3);
+	f1 = 0.0;
+	/*
+	  Now loop over the number of shaded regions which must be drawn for a particular eclipse
+	  type.   Two regions are drawn for each type of eclipse - the regions show where that
+	  phase of the eclipse starts at moonrise, and where it ends at moonrise.
+	*/
+	for (pass = 0; pass < 2; pass++) {
+	  for (region = 0; region < nShadedRegions; region++) {
+	    int color = 0;
+	    float subLat, subLon, cosSubLat, sinSubLat;
+	    double tJD = 0.0;
+	    
+	    switch (region) {
+	    case 0:
+	      tJD = penEclipseStartTJD;
+	      color = penColor;
+	      break;
+	    case 1:
+	      tJD = penEclipseEndTJD;
+	      color = penColor;
+	      break;
+	    case 2:
+	      tJD = parEclipseStartTJD;
+	      color = parColor;
+	      break;
+	    case 3:
+	      tJD = parEclipseEndTJD;
+	      color = parColor;
+	      break;
+	    case 4:
+	      tJD = totEclipseStartTJD;
+	      color = totColor;
+	      break;
+	    case 5:
+	      tJD = totEclipseEndTJD;
+	      color = totColor;
+	      break;
+	    }
+	    moonPosition(tJD, &rA, &dec, &d1, &d2, &d3, &f1);
+	    myLST = lSTAtTJD(tJD);
+	    subLat = dec;
+	    subLon = longitude - myLST + rA - M_PI;
+	    while (subLon < -M_PI)
+	      subLon += M_2PI;
+	    while (subLon > M_PI)
+	      subLon -= M_2PI;
+	    cosSubLat = cosf((float)subLat); sinSubLat = sinf((float)subLat);
+	    for (i = j = 0; i < nSteps; i++) {
+	      lon = atan2f(sinf(f1), -cosf(f1)*sinSubLat) + subLon;
+	      if (lon > M_PI)
+		lon -= M_2PI;
+	      if (lon < -M_PI)
+		lon += M_2PI;
+	      lat = -asinf(cosSubLat*cosf(f1));
+	      if (pass == 0) {
+		if ((i > 0) && (fabs(lastLon - lon) > M_PI)) {
+		  if ((lon < 0.0) && (subLat > 0.0)) {
+		    latLonToPixels(lat,         M_PI, &verticies[i].x,   &verticies[i].y);
+		    latLonToPixels(M_HALF_PI,   M_PI, &verticies[i+1].x, &verticies[i+1].y);
+		    latLonToPixels(M_HALF_PI,  -M_PI, &verticies[i+2].x, &verticies[i+2].y);
+		    latLonToPixels(lat,        -M_PI, &verticies[i+3].x, &verticies[i+3].y);
+		  } else if ((lon < 0.0) && (subLat < 0.0)) {
+		    latLonToPixels(lat,         M_PI, &verticies[i].x,   &verticies[i].y);
+		    latLonToPixels(-M_HALF_PI,  M_PI, &verticies[i+1].x, &verticies[i+1].y);
+		    latLonToPixels(-M_HALF_PI, -M_PI, &verticies[i+2].x, &verticies[i+2].y);
+		    latLonToPixels(lat,        -M_PI, &verticies[i+3].x, &verticies[i+3].y);
+		  } else if ((lon > 0.0) && (subLat > 0.0)) {
+		    latLonToPixels(lat,        -M_PI, &verticies[i].x,   &verticies[i].y);
+		    latLonToPixels(M_HALF_PI,  -M_PI, &verticies[i+1].x, &verticies[i+1].y);
+		    latLonToPixels(M_HALF_PI,   M_PI, &verticies[i+2].x, &verticies[i+2].y);
+		    latLonToPixels(lat,         M_PI, &verticies[i+3].x, &verticies[i+3].y);
+		  } else {
+		    latLonToPixels(lat,        -M_PI, &verticies[i].x,   &verticies[i].y);
+		    latLonToPixels(-M_HALF_PI, -M_PI, &verticies[i+1].x, &verticies[i+1].y);
+		    latLonToPixels(-M_HALF_PI,  M_PI, &verticies[i+2].x, &verticies[i+2].y);
+		    latLonToPixels(lat,         M_PI, &verticies[i+3].x, &verticies[i+3].y);
+		  }
+		  j = 4;
+		}
+	      }
+	      latLonToPixels(lat, lon, &verticies[i+j].x, &verticies[i+j].y);
+	      lastLon = lon;
+	      f1 += step;
+	    }
+	    if (pass == 0)
+	      gdk_draw_polygon(lunarEclipsePixmap, gC[color], TRUE, verticies, i+j);
+	    else
+	      for (j = 0; j < i-1; j++) 
+		if (abs(verticies[j].x - verticies[j+1].x) < EARTH_MAP_WIDTH/2)
+		  gdk_draw_line(lunarEclipsePixmap, gC[OR_BLACK],
+				verticies[j].x, verticies[j].y, verticies[j+1].x, verticies[j+1].y);
+	  }
+	}
+	segment = shoreRoot;
+	while (segment != NULL) {
+	  int i;
+
+	  if (segment->nVerticies > 1) {
+	    for (i = 0; i < segment->nVerticies; i++) {
+	      lat = ((float)segment->lat[i])*M_PI/65535.0; /* Convert signed short range to +-pi/2 */
+	      lon = ((float)segment->lon[i])*M_PI/32767.0; /* Convert signed short range to +- pi  */
+	      latLonToPixels(lat, lon, &verticies[i].x, &verticies[i].y);
+	    }
+	    gdk_draw_lines(lunarEclipsePixmap, gC[OR_BLACK], verticies, segment->nVerticies);
+	  } else {
+	    lat = ((float)segment->lat[0])*M_PI/65535.0; /* Convert signed short range to +-pi/2 */
+	    lon = ((float)segment->lon[0])*M_PI/32767.0; /* Convert signed short range to +- pi  */
+	    latLonToPixels(lat, lon, &verticies[0].x, &verticies[0].y);
+	    gdk_draw_point(lunarEclipsePixmap, gC[OR_BLACK], verticies[0].x, verticies[0].y);
+	  }
+	  segment = segment->next;
+	}
+	latLonToPixels((float)latitude, (float)longitude, &verticies[0].x, &verticies[0].y);
+	xHome = verticies[0].x;
+	gdk_draw_arc(lunarEclipsePixmap, gC[OR_RED], TRUE, verticies[0].x-4, verticies[0].y-4,
+		     8, 8, 0, FULL_CIRCLE);
+	latLonToPixels(-M_HALF_PI, (float)sublunarLon, &verticies[0].x, &verticies[0].y);
+	latLonToPixels(M_HALF_PI, (float)sublunarLon, &verticies[1].x, &verticies[1].y);
+	gdk_draw_line(lunarEclipsePixmap, gC[OR_BLUE], verticies[0].x, verticies[0].y, verticies[1].x, verticies[1].y);
+	if (verticies[0].x > 0)
+	  gdk_draw_line(lunarEclipsePixmap, gC[OR_BLUE], verticies[0].x-1, verticies[0].y,
+			verticies[1].x-1, verticies[1].y);
+	if (verticies[0].x < displayWidth-1)
+	  gdk_draw_line(lunarEclipsePixmap, gC[OR_BLUE], verticies[0].x+1, verticies[0].y,
+			verticies[1].x+1, verticies[1].y);
+	latLonToPixels((float)sublunarLat, (float)sublunarLon, &verticies[0].x, &verticies[0].y);
+	gdk_draw_arc(lunarEclipsePixmap, gC[OR_BLUE], TRUE, verticies[0].x-6, verticies[0].y-6,
+		     12, 12, 0, FULL_CIRCLE);
+	mapWidth = (int)EARTH_MAP_WIDTH;
+	if (xHome < mapWidth/2) {
+	  gdk_draw_drawable(pixmap, gC[OR_BLUE], lunarEclipsePixmap,
+			    mapWidth/2 + xHome, 10, 0, EARTH_MAP_OFFSET-EARTH_MAP_HEIGHT,
+			    mapWidth/2 - xHome, ((int)EARTH_MAP_HEIGHT)-20);
+	  gdk_draw_drawable(pixmap, gC[OR_BLUE], lunarEclipsePixmap,
+			    0, 10, mapWidth/2 - xHome, EARTH_MAP_OFFSET-EARTH_MAP_HEIGHT,
+			    mapWidth/2 + xHome, ((int)EARTH_MAP_HEIGHT)-20);
+	} else {
+	  gdk_draw_drawable(pixmap, gC[OR_BLUE], lunarEclipsePixmap,
+			    0, 10, 3*mapWidth/2 - xHome, EARTH_MAP_OFFSET-EARTH_MAP_HEIGHT,
+			    xHome - mapWidth/2, ((int)EARTH_MAP_HEIGHT)-20);
+	  gdk_draw_drawable(pixmap, gC[OR_BLUE], lunarEclipsePixmap,
+			    xHome - mapWidth/2, 10, 0, EARTH_MAP_OFFSET-EARTH_MAP_HEIGHT,
+			    mapWidth/2 - xHome, ((int)EARTH_MAP_HEIGHT)-20);
+	}
+	{
+	  int upAtStart, hH, mM;
+	  int up, wasUp = FALSE;
+	  int neverWasUp = TRUE, alwaysWasUp = TRUE;
+	  int risesInPen = FALSE, risesInPar = FALSE, risesInTot = FALSE;
+	  int setsInPen = FALSE, setsInPar = FALSE, setsInTot = FALSE;
+	  int willSeePen = FALSE, willSeePar = FALSE, willSeeTot = FALSE;
+	  int nPenSeen = 0, nParSeen = 0, nTotSeen = 0;
+	  float minutesPen, minutesPar, minutesTot;
+	  int iMinutesPen, iMinutesPar, iMinutesTot, textY;
+	  double tJD, rA, dec, az, zA, h0, sS;
+	  double trackStep = 1.0/2880.0;
+	  double riseTime = 0.0, setTime = 0.0;
+
+	  needNewTime = FALSE;
+	  h0 = 0.125*DEGREES_TO_RADIANS;
+	  for (tJD = penEclipseStartTJD; tJD <= penEclipseEndTJD; tJD += trackStep) {
+	    moonPosition(tJD, &rA, &dec, &d1, &d2, &moonDistanceKM, &f1);
+	    myLST = lSTAtTJD(tJD);
+	    azZA(rA, sin(dec), cos(dec), &az, &zA, FALSE);
+	    if (zA < M_HALF_PI - h0) {
+	      up = TRUE;
+	      neverWasUp = FALSE;
+	    } else {
+	      up = FALSE;
+	      alwaysWasUp = FALSE;
+	    }
+	    if (tJD == penEclipseStartTJD) {
+	      if (up)
+		upAtStart = TRUE;
+	      else
+		upAtStart = FALSE;
+	    } else {
+	      int inPen = FALSE, inPar = FALSE, inTot = FALSE;
+
+	      if (up
+		  && ((tJD - parEclipseStartTJD < 0.0) || (tJD - parEclipseEndTJD > 0.0))) {
+		willSeePen = TRUE;
+		inPen = TRUE;
+		nPenSeen++;
+	      } else if (up && (eclipseType > PENUMBRAL_LUNAR_ECLIPSE)
+			 && (tJD - parEclipseStartTJD > 0.0) && (tJD - parEclipseEndTJD < 0.0)
+			 && ((tJD - totEclipseStartTJD < 0.0) || (tJD - totEclipseEndTJD > 0.0))) {
+		willSeePar = TRUE;
+		inPar = TRUE;
+		nParSeen++;
+	      } else if (up && (eclipseType == TOTAL_LUNAR_ECLIPSE)
+			 && (tJD - totEclipseStartTJD > 0.0) && (tJD - totEclipseEndTJD < 0.0)) {
+		willSeeTot = TRUE;
+		inTot = TRUE;
+		nTotSeen++;
+	      }
+	      if (!up
+		  && ((tJD - parEclipseStartTJD < 0.0) || (tJD - parEclipseEndTJD > 0.0))) {
+		inPen = TRUE;
+	      } else if (!up && (eclipseType > PENUMBRAL_LUNAR_ECLIPSE)
+			 && (tJD - parEclipseStartTJD > 0.0) && (tJD - parEclipseEndTJD < 0.0)
+			 && ((tJD - totEclipseStartTJD < 0.0) || (tJD - totEclipseEndTJD > 0.0))) {
+		inPar = TRUE;
+	      } else if (!up && (eclipseType == TOTAL_LUNAR_ECLIPSE)
+			 && (tJD - totEclipseStartTJD > 0.0) && (tJD - totEclipseEndTJD < 0.0)) {
+		inTot = TRUE;
+	      }
+	      if (up && !wasUp) {
+		if (inPen)
+		  risesInPen = TRUE;
+		else if (inPar)
+		  risesInPar = TRUE;
+		else if (inTot)
+		  risesInTot = TRUE;
+		else
+		  fprintf(stderr, "LOGIC ERROR #1\n");
+		riseTime = tJD;
+	      } else if (!up && wasUp) {
+		if (inPen)
+		  setsInPen = TRUE;
+		else if (inPar)
+		  setsInPar = TRUE;
+		else if (inTot)
+		  setsInTot = TRUE;
+		else
+		  fprintf(stderr, "LOGIC ERROR #2\n");
+		setTime = tJD;
+	      }
+	    }
+	    wasUp = up;
+	  }
+	  if (riseTime != 0.0)
+	    tJDToHHMMSS(riseTime, &hH, &mM, &sS);
+	  else if (setTime != 0.0)
+	    tJDToHHMMSS(setTime, &hH, &mM, &sS);
+	  if (sS > 30.0) {
+	    mM += 1;
+	    if (mM > 59) {
+	      mM = 0;
+	      hH += 1;
+	      if (hH > 23)
+		hH = 0;
+	    }
+	  }
+	  minutesPen = ((float)nPenSeen)*trackStep*1440.0 + 0.1; iMinutesPen = roundf(minutesPen);
+	  minutesPar = ((float)nParSeen)*trackStep*1440.0 + 0.1; iMinutesPar = roundf(minutesPar);
+	  minutesTot = ((float)nTotSeen)*trackStep*1440.0 + 0.1; iMinutesTot = roundf(minutesTot);
+	  if (risesInPen || risesInPar || risesInTot
+	      || setsInPen || setsInPar || setsInTot) {
+	    char label[100];
+
+	    if (risesInPen || risesInPar || risesInTot) {
+	      tJD = riseTime;
+	      strcpy(label, "Moon rises here");
+	    } else {
+	      tJD = setTime;
+	      strcpy(label, "Moon sets here");
+	    }
+	    moonPosition(tJD, &rA, &dec, &d1, &d2, &moonDistanceKM, &f1);
+	    moonDistanceCM = moonDistanceKM * 1.0e5;
+	    vSOPPlanetInfo(dataDir, tJD, SUN, &sunRA, &sunDec, &sunDistanceKM);
+	    shadowPlaneRA = sunRA - M_PI - rA; shadowPlaneDec = -sunDec - dec;
+	    shadowPlaneX =  sin(shadowPlaneRA)*moonDistanceCM;
+	    shadowPlaneY = -sin(shadowPlaneDec)*moonDistanceCM;
+	    cmToPixels(shadowPlaneX, shadowPlaneY, &shadowPlanePX, &shadowPlanePY);
+	    gdk_draw_arc(pixmap, gC[OR_RED], FALSE, shadowPlanePX - moonRadiusPixels,
+			 shadowPlanePY-moonRadiusPixels,
+			 2*moonRadiusPixels, 2*moonRadiusPixels, 0, FULL_CIRCLE);
+	    gdk_draw_arc(pixmap, gC[OR_RED], FALSE, shadowPlanePX - moonRadiusPixels + 1,
+			 shadowPlanePY-moonRadiusPixels + 1,
+			 2*(moonRadiusPixels-1), 2*(moonRadiusPixels-1), 0, FULL_CIRCLE);
+	    backgroundGC = OR_WHITE;
+	    renderPangoText(label, OR_RED, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, shadowPlanePX, UMBRA_MAP_OFFSET + UMBRA_MAP_HEIGHT/2 - 12,
+			    0.0, TRUE, 1);
+	    renderPangoText(label, OR_RED, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, shadowPlanePX, UMBRA_MAP_OFFSET + UMBRA_MAP_HEIGHT/2 - 12,
+			    0.0, TRUE, 1);
+	    backgroundGC = OR_BLACK;
+	    if ((UMBRA_MAP_OFFSET + UMBRA_MAP_HEIGHT/2 - 22)-(shadowPlanePY + moonRadiusPixels + 6) > 20) {
+	      gdk_draw_line(pixmap, gC[OR_RED],
+			    shadowPlanePX, shadowPlanePY + moonRadiusPixels + 6,
+			    shadowPlanePX, UMBRA_MAP_OFFSET + UMBRA_MAP_HEIGHT/2 - 22);
+	      verticies[0].x = shadowPlanePX;     verticies[0].y = shadowPlanePY + moonRadiusPixels + 6;
+	      verticies[1].x = shadowPlanePX - 4; verticies[1].y = shadowPlanePY + moonRadiusPixels + 20;
+	      verticies[2].x = shadowPlanePX + 4; verticies[2].y = shadowPlanePY + moonRadiusPixels + 20;
+	      gdk_draw_polygon(pixmap, gC[OR_RED], TRUE, verticies, 3);
+	    }
+	  }
+	  textY = 20;
+	  renderPangoText(title, OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, displayWidth/2, textY,
+			  0.0, TRUE, 1);
+	  renderPangoText(title, OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, displayWidth/2, textY,
+			  0.0, TRUE, 1);
+	  textY += 30;
+	  if (alwaysWasUp) {
+	    renderPangoText("All of this eclipse is visible from your location.",
+			    OR_GREEN, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, displayWidth/2, textY,
+			    0.0, TRUE, 1);
+	  } else if (neverWasUp) {
+	    renderPangoText("This eclipse is not visible from your location at all.",
+			    OR_RED, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, displayWidth/2, textY,
+			    0.0, TRUE, 1);
+	  } else if (eclipseType == PENUMBRAL_LUNAR_ECLIPSE) {
+	    if (risesInPen) {
+	      sprintf(scratchString, "The moon rises at %02d:%02d UT, while the eclipse is underway.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else {
+	      sprintf(scratchString, "The moon sets at %02d:%02d UT, before the eclipse is over.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    }
+	  } else if (eclipseType == PARTIAL_LUNAR_ECLIPSE) {
+	    if (willSeePar) {
+	      renderPangoText("You can see the partial eclipse.",
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else {
+	      renderPangoText("You can only see the penumbral phase.",
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    }
+	    if (risesInPen) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon rises at %02d:%02d, during the penumbral phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (risesInPar) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon rises at %02d:%02d UT, during the partial phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (setsInPar) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon sets at %02d:%02d UT, during the partial phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (setsInPen) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon sets at %02d:%02d, during the penumbral phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    }
+	  } else {
+	    if (willSeeTot) {
+	      renderPangoText("You can see the total eclipse.",
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (willSeePar) {
+	      renderPangoText("You can only see a partial eclipse.",
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else {
+	      renderPangoText("You can only see the penumbral phase.",
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    }
+	    if (risesInPen) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon rises at %02d:%02d, during the penumbal phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (risesInPar) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon rises at %02d:%02d UT, during the partial phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (risesInTot) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon rises at %02d:%02d UT, during the total phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (setsInTot) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon sets at %02d:%02d UT, during the total phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (setsInPar) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon sets at %02d:%02d UT, during the partial phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    } else if (setsInPen) {
+	      textY += 25;
+	      sprintf(scratchString, "The moon sets at %02d:%02d, during the penumbral phase.",
+		      hH, mM);
+	      renderPangoText(scratchString,
+			      OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			      pixmap, displayWidth/2, textY,
+			      0.0, TRUE, 1);
+	    }
+	  }
+	  if (iMinutesPen || iMinutesPar || iMinutesTot) {
+	    char penPlur[2], parPlur[2], totPlur[2];
+
+	    penPlur[0] = parPlur[0] = totPlur[0] = (char)0;
+	    if (iMinutesPen != 1)
+	      strcpy(penPlur, "s");
+	    if (iMinutesPar != 1)
+	      strcpy(parPlur, "s");
+	    if (iMinutesTot != 1)
+	      strcpy(totPlur, "s");
+
+	    if (!iMinutesPen && !iMinutesPar && iMinutesTot)      /* 001 */
+	      sprintf(scratchString, "You'll see %d minute%s of the total eclipse.",
+		      iMinutesTot, totPlur);
+	    else if (!iMinutesPen && iMinutesPar && !iMinutesTot) /* 010 */
+	      sprintf(scratchString, "You'll see %d minute%s of the partial eclipse.",
+		      iMinutesPar, parPlur);
+	    else if (!iMinutesPen && iMinutesPar && iMinutesTot)  /* 011 */
+	      sprintf(scratchString, "Visible for %d partial and %d total minutes.",
+		      iMinutesPar, iMinutesTot);
+	    else if (iMinutesPen && !iMinutesPar && !iMinutesTot) /* 100 */
+	      sprintf(scratchString, "You'll see %d minute%s of the penumbral eclipse.",
+		      iMinutesPen, penPlur);
+	    else if (iMinutesPen && !iMinutesPar && iMinutesTot)  /* 101 */
+	      sprintf(scratchString, "Visible for %d penumbral and %d total minutes.",
+		      iMinutesPen, iMinutesTot);
+	    else if (iMinutesPen && iMinutesPar && !iMinutesTot)  /* 110 */
+	      sprintf(scratchString, "Visible for %d penumbral and %d partial minutes.",
+		      iMinutesPen, iMinutesPar);
+	    else                                                  /* 111 */
+	      sprintf(scratchString, "Visible for penumbral: %d partial: %d total: %d minutes.",
+		      iMinutesPen, iMinutesPar, iMinutesTot);
+	    textY += 25;
+	    renderPangoText(scratchString,
+			    OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, displayWidth/2, textY,
+			    0.0, TRUE, 1);
+	  }
+	  textY += 40;
+	  if (eclipseType == PENUMBRAL_LUNAR_ECLIPSE)
+	    sprintf(scratchString,"Saros Number %d Penumbral Magnitude: %5.3f",
+		    lunarEclipses[selectedLunarEclipse].sarosNum,
+		    lunarEclipses[selectedLunarEclipse].penMag);
+	  else
+	    sprintf(scratchString,"Saros Number %d Umbral Magnitude: %5.3f",
+		    lunarEclipses[selectedLunarEclipse].sarosNum,
+		    lunarEclipses[selectedLunarEclipse].umbMag);
+	  renderPangoText(scratchString,
+			  OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			  pixmap, displayWidth/2, textY,
+			  0.0, TRUE, 1);
+	  needNewTime = TRUE;
+	}
+	displayLunarEclipse = FALSE;
+      } else { /* Not displayLunarEclipse */
+	static int firstCall = TRUE;
+	static GtkObject *startYearAdj, *endYearAdj;
+	eclipseMenuItem *menuItem, *lastItem = NULL;
+
+	/* Display the page to *select* an eclipse to display */
+	if (firstCall) {
+	  listStartYear = cYear;
+	  listEndYear = listStartYear+10.0;
+	  readEclipseData();
+	  firstCall = FALSE;
+	}
+	lunarEclipseSelectionTable = gtk_table_new(5, 12, FALSE);
+	
+	lunarEclipseSelectionLabel = gtk_label_new("Select Lunar Eclipses to List");
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), lunarEclipseSelectionLabel, 0, 4, 0, 1,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	
+	listLocalEclipsesOnlyButton =
+	  (GtkCheckButton *)gtk_check_button_new_with_label("List only eclipses visible from here");
+	gtk_toggle_button_set_active((GtkToggleButton *)listLocalEclipsesOnlyButton, listLocalEclipsesOnly);
+	
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), GTK_WIDGET(listLocalEclipsesOnlyButton),
+			 0, 4, 1, 2, GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	
+	lunarEclipseSeparator1 = gtk_separator_menu_item_new();
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), lunarEclipseSeparator1, 0, 4, 2, 3,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	
+	lunarEclipseTypeLabel = gtk_label_new("Types of eclipses to list");
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), lunarEclipseTypeLabel, 0, 4, 3, 4,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	listPenumbralEclipsesButton =
+	  (GtkCheckButton *)gtk_check_button_new_with_label("Penumbral");
+	gtk_toggle_button_set_active((GtkToggleButton *)listPenumbralEclipsesButton, listPenumbralEclipses);
+	
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), GTK_WIDGET(listPenumbralEclipsesButton),
+			 0, 1, 4, 5, GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	listPartialEclipsesButton =
+	  (GtkCheckButton *)gtk_check_button_new_with_label("Partial");
+	gtk_toggle_button_set_active((GtkToggleButton *)listPartialEclipsesButton, listPartialEclipses);
+	
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), GTK_WIDGET(listPartialEclipsesButton),
+			 1, 2, 4, 5, GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	listTotalEclipsesButton =
+	  (GtkCheckButton *)gtk_check_button_new_with_label("Total");
+	gtk_toggle_button_set_active((GtkToggleButton *)listTotalEclipsesButton, listTotalEclipses);
+	
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), GTK_WIDGET(listTotalEclipsesButton),
+			 2, 3, 4, 5, GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	
+	lunarEclipseSeparator2 = gtk_separator_menu_item_new();
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), lunarEclipseSeparator2, 0, 4, 5, 6,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	
+	lunarEclipseDateLabel = gtk_label_new("Eclipse list date range");
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), lunarEclipseDateLabel, 0, 4, 6, 7,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	lunarEclipseStartYearLabel = gtk_label_new("Start Year");
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), lunarEclipseStartYearLabel, 0, 1, 7, 8,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	startYearAdj = gtk_adjustment_new(listStartYear, -3000.0, 3000.0, 1.0, 1.0, 0.0);
+	startYearSpin = gtk_spin_button_new((GtkAdjustment *)startYearAdj, 0.5, 0);
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), startYearSpin, 1, 2, 7, 8,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	endYearAdj = gtk_adjustment_new(listEndYear, -1999.0, 3000.0, 1.0, 1.0, 0.0);
+	endYearSpin = gtk_spin_button_new((GtkAdjustment *)endYearAdj, 0.5, 0);
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), endYearSpin, 1, 2, 7, 8,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	lunarEclipseEndYearLabel = gtk_label_new("End Year");
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), lunarEclipseEndYearLabel, 2, 3, 7, 8,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	endYearAdj = gtk_adjustment_new(listEndYear, -1999.0, 3000.0, 1.0, 1.0, 0.0);
+	endYearSpin = gtk_spin_button_new((GtkAdjustment *)endYearAdj, 0.5, 0);
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), endYearSpin, 3, 4, 7, 8,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+
+	rebuildEclipseListButton = gtk_button_new_with_label("Rebuild the Eclipse List");
+	gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), rebuildEclipseListButton, 0, 4, 8, 9,
+			 GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	g_signal_connect(G_OBJECT(rebuildEclipseListButton), "clicked",
+			 G_CALLBACK(rebuildEclipseListCallback), NULL);
+
+	needNewTime = FALSE;
+	selectedLunarEclipse = -1;
+	nEclipsesForMenu = 0;
+	/* Make a list of eclipses to choose from */
+	for (i = 0; i < N_LUNAR_ECLIPSES; i++) {
+	  int yYYY, mM, dD;
+	  double thisYear;
+	  char dateString[23];
+	  
+	  yYYY = lunarEclipses[i].date/0x10000;
+	  thisYear = (double)(yYYY);
+	  if ((listStartYear <= thisYear) && (thisYear <= listEndYear)) {
+	    int dTMinusUT, hH, minute, sS, j, displayable;
+	    float f1;
+	    double tDGE, eclipseUTHours, d1, d2, d3;
+	    double eclipseTJD[N_ECLIPSE_TJDS], el[N_ECLIPSE_TJDS], rA, dec;
+	    
+	    mM          = (lunarEclipses[i].date & 0xff00)/0x100;
+	    dD          =  lunarEclipses[i].date & 0xff;
+	    eclipseType =  lunarEclipses[i].type1 & 0xf;
+	    tDGE        =  lunarEclipses[i].tDGE;
+	    dTMinusUT   =  lunarEclipses[i].dTMinusUT;
+	    eclipseUTHours = (tDGE - dTMinusUT)/3600.0;
+	    hH = (int)eclipseUTHours;
+	    minute = (int)((eclipseUTHours - (double)hH) * 60.0);
+	    sS = (int)((eclipseUTHours - (double)hH - ((double)minute)/60.0)*3600.0 + 0.5);
+	    eclipseTJD[MID_ECLIPSE_TJD] = buildTJD(yYYY-1900, mM-1, dD, hH, minute, sS, 0);
+	    eclipseTJD[PEN_ECLIPSE_START_TJD] =
+	      eclipseTJD[MID_ECLIPSE_TJD] - lunarEclipses[i].penDur/2880.0;
+	    eclipseTJD[PAR_ECLIPSE_START_TJD] =
+	      eclipseTJD[MID_ECLIPSE_TJD] - lunarEclipses[i].parDur/2880.0;
+	    eclipseTJD[TOT_ECLIPSE_START_TJD] =
+	      eclipseTJD[MID_ECLIPSE_TJD] - lunarEclipses[i].totDur/2880.0;
+	    eclipseTJD[PEN_ECLIPSE_END_TJD] =
+	      eclipseTJD[MID_ECLIPSE_TJD] + lunarEclipses[i].penDur/2880.0;
+	    eclipseTJD[PAR_ECLIPSE_END_TJD] =
+	      eclipseTJD[MID_ECLIPSE_TJD] + lunarEclipses[i].parDur/2880.0;
+	    eclipseTJD[TOT_ECLIPSE_END_TJD] =
+	      eclipseTJD[MID_ECLIPSE_TJD] + lunarEclipses[i].totDur/2880.0;
+	    if (listLocalEclipsesOnly)
+	      displayable = FALSE;
+	    else
+	      displayable = TRUE;
+	    for (j = 1; j < N_ECLIPSE_TJDS; j++) {
+	      double az, zA;
+	      
+	      moonPosition(eclipseTJD[j], &rA, &dec, &d1, &d2, &d3, &f1);
+	      myLST = lSTAtTJD(eclipseTJD[j]);
+	      azZA(rA, sin(dec), cos(dec), &az, &zA, FALSE);
+	      el[j] = M_HALF_PI - zA;
+	      switch (j) {
+	      case PEN_ECLIPSE_START_TJD:
+	      case PEN_ECLIPSE_END_TJD:
+		if (listPenumbralEclipses && (el[j] > 0.0))
+		  displayable = TRUE;
+		break;
+	      case PAR_ECLIPSE_START_TJD:
+	      case PAR_ECLIPSE_END_TJD:
+		if ((eclipseType >= PARTIAL_LUNAR_ECLIPSE) && listPartialEclipses && (el[j] > 0.0))
+		  displayable = TRUE;
+		break;
+	      case TOT_ECLIPSE_START_TJD:
+	      case TOT_ECLIPSE_END_TJD:
+		if ((eclipseType == TOTAL_LUNAR_ECLIPSE) && listTotalEclipses && (el[j] > 0.0))
+		  displayable = TRUE;
+		break;
+	      }
+	    }
+	    
+	    if ((((eclipseType == PENUMBRAL_LUNAR_ECLIPSE) && listPenumbralEclipses)
+		 || ((eclipseType == PARTIAL_LUNAR_ECLIPSE)   && listPartialEclipses)
+		 || ((eclipseType == TOTAL_LUNAR_ECLIPSE)     && listTotalEclipses))
+		&& displayable) {
+	      if (selectedLunarEclipse < 0)
+		selectedLunarEclipse = i;
+	      switch (eclipseType) {
+	      case PENUMBRAL_LUNAR_ECLIPSE:
+		sprintf(dateString, "%04d-%02d-%02d Penumbral", yYYY, mM, dD);
+		break;
+	      case PARTIAL_LUNAR_ECLIPSE:
+		sprintf(dateString, "%04d-%02d-%02d Partial", yYYY, mM, dD);
+		break;
+	      default:
+		sprintf(dateString, "%04d-%02d-%02d Total", yYYY, mM, dD);
+	      }
+	      nEclipsesForMenu++;
+	      menuItem = (eclipseMenuItem *)malloc(sizeof(eclipseMenuItem));
+	      if (menuItem == NULL) {
+		perror("Lunar eclipse menu item");
+		exit(ERROR_EXIT);
+	      }
+	      menuItem->next = NULL;
+	      menuItem->key = i;
+	      menuItem->name = malloc(strlen(dateString)+1);
+	      if (menuItem->name == NULL) {
+		perror("Lunar eclipse menu item name");
+		exit(ERROR_EXIT);
+	      }
+	      strcpy(menuItem->name, dateString);
+	      if (eclipseMenuItemRoot == NULL)
+		eclipseMenuItemRoot = menuItem;
+	      else
+		lastItem->next = menuItem;
+	      lastItem = menuItem;
+	    }
+	  }
+	}
+	if (eclipseMenuItemRoot != NULL) {
+	  char *menuHeading = "/Click Here to Select the Eclipse to Display";
+	  
+	  lunarItemFactoryEntry = (GtkItemFactoryEntry *)malloc((1+nEclipsesForMenu)*
+								sizeof(GtkItemFactoryEntry));
+	  if (unlikely(lunarItemFactoryEntry == NULL)) {
+	    perror("lunarItemFactoryEntry");
+	    exit(ERROR_EXIT);
+	  }
+	  lunarItemFactoryEntry[0].path = (gchar *)malloc(strlen(menuHeading)+1);
+	  if (unlikely(lunarItemFactoryEntry[0].path == NULL)) {
+	    perror("lunarItemFactoryEntry[0].path");
+	    exit(ERROR_EXIT);
+	  }
+	  strcpy(lunarItemFactoryEntry[0].path, menuHeading);
+	  lunarItemFactoryEntry[0].accelerator = NULL;
+	  lunarItemFactoryEntry[0].callback = NULL;
+	  lunarItemFactoryEntry[0].callback_action = 0;
+	  lunarItemFactoryEntry[0].extra_data = NULL;
+	  lunarItemFactoryEntry[0].item_type = (gchar *)malloc(strlen("<Branch>")+1);
+	  if (unlikely(lunarItemFactoryEntry[0].item_type == NULL)) {
+	    perror("lunarItemFactoryEntry[0].item_type");
+	    exit(ERROR_EXIT);
+	  }
+	  strcpy(lunarItemFactoryEntry[0].item_type, "<Branch>");
+	  lastItem = eclipseMenuItemRoot;
+	  for (i = 1; i <= nEclipsesForMenu; i++) {
+	    char path[100];
+	    
+	    sprintf(path, "%s/%s", menuHeading, lastItem->name);
+	    lunarItemFactoryEntry[i].path = (gchar *)malloc(strlen(path)+1);
+	    if (unlikely(lunarItemFactoryEntry[i].path == NULL)) {
+	      perror("lunatItemFactoryEntry[i].path");
+	      exit(ERROR_EXIT);
+	    }
+	    strcpy(lunarItemFactoryEntry[i].path, path);
+	    lunarItemFactoryEntry[i].accelerator = NULL;
+	    lunarItemFactoryEntry[i].callback = lunarCategoryCallback;
+	    lunarItemFactoryEntry[i].callback_action = lastItem->key;
+	    lunarItemFactoryEntry[i].item_type = NULL;
+	    lastItem = lastItem->next;
+	  }
+	  lunarAccelGroup = gtk_accel_group_new();
+	  lunarItemFactory = gtk_item_factory_new(GTK_TYPE_MENU_BAR, "<OrreryLunarEclipses>",
+						  lunarAccelGroup);
+	  gtk_item_factory_create_items(lunarItemFactory, nEclipsesForMenu+1, lunarItemFactoryEntry,
+					NULL);
+	  lunarMenu = gtk_item_factory_get_widget(lunarItemFactory, "<OrreryLunarEclipses>");
+	  gtk_table_attach(GTK_TABLE(lunarEclipseSelectionTable), (GtkWidget *)lunarMenu, 0, 4, 9, 10,
+			   GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+	}
+	needNewTime = TRUE;
+	
+	lunarEclipseStackable = hildon_stackable_window_new();
+	g_signal_connect(G_OBJECT(lunarEclipseStackable), "destroy",
+			 G_CALLBACK(checkLunarEclipseSettings), NULL);
+	gtk_container_add(GTK_CONTAINER(lunarEclipseStackable), lunarEclipseSelectionTable);
+	gtk_widget_show_all(lunarEclipseStackable);
+      }
+    }
+    break;
   case PLANET_PHENOMENA:
     {
       int k0, kI, k, planet, year, month, day, dYear, dMonth, dDay, x, tWidth, tHeight, h;
@@ -8055,6 +9520,7 @@ static void drawOptsScreens(void)
   if ((aboutScreen != PLANETCOMPASS_SCREEN) && (aboutScreen != SMALL_MOONCAL_SCREEN)
       && (aboutScreen != SOLAR_SYSTEM_SCHEMATIC_SCREEN) && (aboutScreen != PLANET_ELEVATION_SCREEN)
       && (aboutScreen != JOVIAN_MOONS) && (aboutScreen != CELESTIAL_NAVIGATION)
+      && (aboutScreen != LUNAR_ECLIPSES)
       && (aboutScreen != SOLAR_SYSTEM_SCALE_SCREEN) && (aboutScreen != TIMES_PAGE_SCREEN)
       && (aboutScreen != ANALEMMA_SCREEN) && (aboutScreen != SOLUNI_SCREEN)) {
     
@@ -8845,58 +10311,6 @@ static int periodicUpdate(gpointer data)
   return(TRUE);
 }
 
-/*
-  Write out the values that the user can set.
-*/
-void writeConfigFile(void)
-{
-  int i;
-  char tempName[MAX_FILE_NAME_SIZE], newName[MAX_FILE_NAME_SIZE], oldName[MAX_FILE_NAME_SIZE];
-  FILE *newConfigFile;
-
-  sprintf(newName, "%s/config.new", dataDir);
-  newConfigFile = fopen(newName, "w");
-  if (unlikely(newConfigFile == NULL)) {
-    perror("config.new");
-    return;
-  }
-  fprintf(newConfigFile, "CHINESE_COLOR_SCHEME %d\n", chineseColorScheme);
-  fprintf(newConfigFile, "LIMITING_MAGNITUDE1 %6.2f\n", limitingMagnitude1);
-  fprintf(newConfigFile, "LIMITING_MAGNITUDE2 %6.2f\n", limitingMagnitude2);
-  fprintf(newConfigFile, "SHOW_GREAT_CIRCLES1 %d\n", showGreatCircles1);
-  fprintf(newConfigFile, "SHOW_GREAT_CIRCLES2 %d\n", showGreatCircles2);
-  fprintf(newConfigFile, "USE_ASTERISMS %d\n", useAsterisms);
-  fprintf(newConfigFile, "SHOW_DEEP_SKY1 %d\n", showDeepSky1);
-  fprintf(newConfigFile, "SHOW_DEEP_SKY2 %d\n", showDeepSky2);
-  fprintf(newConfigFile, "SHOW_BAYER1 %d\n", showBayer1);
-  fprintf(newConfigFile, "SHOW_BAYER2 %d\n", showBayer2);
-  fprintf(newConfigFile, "SHOW_STARS1 %d\n", showStars1);
-  fprintf(newConfigFile, "SHOW_STARS2 %d\n", showStars2);
-  fprintf(newConfigFile, "SHOW_PLANETS1 %d\n", showPlanets1);
-  fprintf(newConfigFile, "SHOW_PLANETS2 %d\n", showPlanets2);
-  fprintf(newConfigFile, "SHOW_STAR_NAMES1 %d\n", showNames1);
-  fprintf(newConfigFile, "SHOW_STAR_NAMES2 %d\n", showNames2);
-  fprintf(newConfigFile, "SHOW_METEORS1 %d\n", showMeteors1);
-  fprintf(newConfigFile, "SHOW_METEORS2 %d\n", showMeteors2);
-  fprintf(newConfigFile, "USE_GPSD %d\n", useGPSD);
-  fprintf(newConfigFile, "INITIAL_AZIMUTH %7.2f\n", initialAzimuth);
-  fprintf(newConfigFile, "DEBUG_MESSAGES_ON %d\n", debugMessagesOn);
-  fprintf(newConfigFile, "JOVIAN_MOONS_NE %d\n", jovianMoonsNE);
-  fprintf(newConfigFile, "JOVIAN_MOONS_NW %d\n", jovianMoonsNW);
-  fprintf(newConfigFile, "JOVIAN_MOONS_SE %d\n", jovianMoonsSE);
-  fprintf(newConfigFile, "JOVIAN_MOONS_SW %d\n", jovianMoonsSW);
-  sprintf(tempName, "%s", locationName);
-  for (i = 0; i < strlen(tempName); i++)
-    if (tempName[i] == ' ')
-      tempName[i] = '_';
-  fprintf(newConfigFile, "DEFAULT_LOCATION_NAME %s\n", tempName);
-  fprintf(newConfigFile, "DEFAULT_LOCATION_LATITUDE %f\n", latitude/DEGREES_TO_RADIANS);
-  fprintf(newConfigFile, "DEFAULT_LOCATION_LONGITUDE %f\n", longitude/DEGREES_TO_RADIANS);
-  fclose(newConfigFile);
-  sprintf(oldName, "%s/config", dataDir);
-  rename(newName, oldName);
-}
-
 void scheduleUpdates(char *caller, int rate)
 {
   dprintf("scheduleUpdates(%s, %d) timerID = %d\n", caller, rate, (int)timerID);
@@ -9533,6 +10947,10 @@ void parseConfigFile(void)
 	tokenCheck(inLine, "JOVIAN_MOONS_NW", INT_TOKEN, &jovianMoonsNW);
 	tokenCheck(inLine, "JOVIAN_MOONS_SE", INT_TOKEN, &jovianMoonsSE);
 	tokenCheck(inLine, "JOVIAN_MOONS_SW", INT_TOKEN, &jovianMoonsSW);
+	tokenCheck(inLine, "LIST_LOCAL_ECLIPSES_ONLY", INT_TOKEN, &listLocalEclipsesOnly);
+	tokenCheck(inLine, "LIST_PENUMBRAL_ECLIPSES", INT_TOKEN, &listPenumbralEclipses);
+	tokenCheck(inLine, "LIST_PARTIAL_ECLIPSES", INT_TOKEN, &listPartialEclipses);
+	tokenCheck(inLine, "LIST_TOTAL_ECLIPSES", INT_TOKEN, &listTotalEclipses);
 	tokenCheck(inLine, "USE_ASTERISMS", INT_TOKEN, &useAsterisms);
 	if (tokenCheck(inLine, "SHOW_DEEP_SKY1", INT_TOKEN, &showDeepSky1))
 	  if (!labelMode)
@@ -10533,7 +11951,7 @@ void celestialNavigationScreen(GtkButton *button, gpointer userData)
 }
 
 /*
-  Call back function for the jovian moons page.
+  Call back function for the Jovian Moons page.
 */
 void jovianMoonsScreen(GtkButton *button, gpointer userData)
 {
@@ -10543,6 +11961,19 @@ void jovianMoonsScreen(GtkButton *button, gpointer userData)
     timerID = (guint)0;
   }
   scheduleUpdates("jovianMoonsScreen", DEFAULT_UPDATE_RATE);
+  fastUpdates = FALSE;
+}
+
+/*
+  Call back function for the Lunar Eclipses page.
+*/
+void lunarEclipsesScreen(GtkButton *button, gpointer userData)
+{
+  putOptsPage(LUNAR_ECLIPSES);
+  if (timerID != (guint)0) {
+    g_source_remove(timerID);
+    timerID = (guint)0;
+  }
   fastUpdates = FALSE;
 }
 
@@ -10969,10 +12400,10 @@ void optionsButtonClicked(GtkButton *button, gpointer userData)
     *bigMooncalButton, *smallMooncalButton, *planetCompassButton, *solarSystemSchematicButton,
     *solarSystemScaleButton, *meteorShowersButton, *timesPageButton, *analemmaButton,
     *planetElevationButton, *planetPhenomenaButton, *jovianMoonsButton,
-    *celestialNavigationButton;
+    *celestialNavigationButton, *lunarEclipsesButton;
 
   postageModeDisabled = TRUE;
-  optionsTable = gtk_table_new(8, 2, FALSE);
+  optionsTable = gtk_table_new(9, 2, FALSE);
   
   whiteFlashlightButton = gtk_button_new_with_label ("White Flashlight");
   gtk_table_attach_defaults(GTK_TABLE(optionsTable), whiteFlashlightButton,
@@ -11073,6 +12504,13 @@ void optionsButtonClicked(GtkButton *button, gpointer userData)
 			    1, 2, row, row+1);
   g_signal_connect (G_OBJECT(celestialNavigationButton), "clicked",
 		    G_CALLBACK (celestialNavigationScreen), NULL);
+  row++;
+
+  lunarEclipsesButton = gtk_button_new_with_label ("Lunar Eclipses");
+  gtk_table_attach_defaults(GTK_TABLE(optionsTable), lunarEclipsesButton,
+			    0, 1, row, row+1);
+  g_signal_connect (G_OBJECT(lunarEclipsesButton), "clicked",
+		    G_CALLBACK (lunarEclipsesScreen), NULL);
 
   optionsStackable = hildon_stackable_window_new();
   g_signal_connect(G_OBJECT(optionsStackable), "destroy",
@@ -11471,7 +12909,7 @@ void locationButtonClicked(GtkButton *button, gpointer userData)
   constelation vertex coordinates to all star coordinates.   This is done so that
   the stars making up a constellation are always plotted, even if they are
   fainter than the magnitude cutoff for the constellation display.   This is a
-  time consuming processnewFIle -D sci, so it is done in the backround as the
+  time consuming processnewFIle -D sci, so it is done in the background as the
   idle process, in the hope that it will have completed before the user wishes to
   display the constellations.
 
