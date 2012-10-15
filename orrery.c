@@ -1,5 +1,5 @@
 /*
-  orrery Rev 3.7
+  orrery Rev 3.8
   First Version Aug. 3, 2007
   
   Copyright (C) (2007 ... 2012) Ken Young orrery.moko@gmail.com
@@ -71,6 +71,7 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 #define ABSOLUTE_MAX_ZA (95.0 * DEGREES_TO_RADIANS)
 
 #define AU (149.597870691) /* Million kilometers in an AU */
+#define SPEED_OF_LIGHT (2.99792458e8)
 
 #define MAX_FILE_NAME_SIZE (256) /* Maximum size a file name is allowed to have */
 
@@ -101,7 +102,7 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream);
 
 #define STAR_NAME_V_OFFSET (14) /* Vertical offset of star name from star */
 
-char *orreryVersion = "3.7";
+char *orreryVersion = "3.8";
 char *userDir;            /* Holds the name of the directory holding private config file */
 char *privateCatalogName; /* Holds the full name of the user's private locations catalog */
 char dataDir[100];
@@ -130,6 +131,7 @@ float magScale2 = 1.0;
 float faintestStar;
 
 int showPlanets = TRUE; /* Plot planets in some way */
+int showComets = TRUE; /* Plot planets in some way */
 int showStars = TRUE; /* Plot fixed objects (stars, galaxies, etc) */
 int displayConstellations = FALSE; /* Plot constellation stick figures */
 int showNames = FALSE; /* Label bright/famous stars */
@@ -184,6 +186,8 @@ int showStars1             = TRUE;  /* Plot stars                               
 int showStars2             = TRUE;
 int showPlanets1           = TRUE;  /* Plot planets                                   */
 int showPlanets2           = TRUE;
+int showComets1            = TRUE;  /* Plot comets                                    */
+int showComets2            = TRUE;
 int showDeepSky1           = TRUE;  /* Plot deep sky objects                          */
 int showDeepSky2           = FALSE;
 int showNames1             = FALSE; /* Plot the names of stars on page 1              */
@@ -293,6 +297,7 @@ int inFlashlightMode = FALSE;
 #define JOVIAN_MOONS                 (12)
 #define CELESTIAL_NAVIGATION         (13)
 #define LUNAR_ECLIPSES               (14)
+#define COMET_SCREEN               (15)
 
 int aboutScreen = ABOUT_SCREEN;
 int displayingAnOptsPage = FALSE;
@@ -460,6 +465,9 @@ typedef struct starNameEntry {
 
 starNameEntry *starNameEntryRoot;
 
+extern cometEphem *cometRoot;
+extern int cometDataReadIn;
+
 /* Menu-related definitions: */
 typedef struct locationEntry {
   char *name;
@@ -612,6 +620,7 @@ int optionsModified = FALSE;
 GtkCheckButton *starCheckButton1, *starCheckButton2, *starNameCheckButton1,
   *starNameCheckButton2, *meteorCheckButton1, *meteorCheckButton2,
   *planetCheckButton1, *planetCheckButton2, *listLocalEclipsesOnlyButton,
+  *cometCheckButton1, *cometCheckButton2,
   *listPenumbralEclipsesButton, *listPartialEclipsesButton, *listTotalEclipsesButton,
   *greatCirclesCheckButton1, *greatCirclesCheckButton2, *useAsterismsCheckButton,
   *deepSkyCheckButton1, *deepSkyCheckButton2, *bayerButton1, *bayerButton2,
@@ -642,7 +651,7 @@ int displayIndividualNavObject = FALSE;
 int individualNavObject;
 
 /* Eclipse-related variables */
-int displayLunarEclipse = FALSE;
+int displayEclipse = FALSE;
 int selectedLunarEclipse = -1;
 
 /* Variables used to draw world shorelines */
@@ -736,6 +745,8 @@ static void fullRedraw(int dummy);
 
 float roundf(float x);
 
+void readInCometEphemerides(char *dataDir);
+void getCometRADec(char *dataDir, char *name, double tJD, int eq, double *c1, double *c2, double *c3, double *mag);
 void planetInfo(char *dataDir, int planetNumber, double tJD, double *rA, double *dec, float *F, float *mag);
 void vSOPPlanetInfo(char *dataDir, double tJD, int planet, double *rA, double *dec, double *distance);
 void analemma(char *dataDir, double tJD, double *EoT, double *dec, double *EoE, double *eclipticLong);
@@ -4153,6 +4164,8 @@ void writeConfigFile(void)
   fprintf(newConfigFile, "SHOW_STARS2 %d\n", showStars2);
   fprintf(newConfigFile, "SHOW_PLANETS1 %d\n", showPlanets1);
   fprintf(newConfigFile, "SHOW_PLANETS2 %d\n", showPlanets2);
+  fprintf(newConfigFile, "SHOW_COMETS1 %d\n", showComets1);
+  fprintf(newConfigFile, "SHOW_COMETS2 %d\n", showComets2);
   fprintf(newConfigFile, "SHOW_STAR_NAMES1 %d\n", showNames1);
   fprintf(newConfigFile, "SHOW_STAR_NAMES2 %d\n", showNames2);
   fprintf(newConfigFile, "SHOW_METEORS1 %d\n", showMeteors1);
@@ -4246,7 +4259,7 @@ void checkLunarEclipseSettings(void)
 
 void lunarCategoryCallback(gpointer callbackData, guint callbackAction, GtkWidget *widget)
 {
-  displayLunarEclipse = TRUE;
+  displayEclipse = TRUE;
   selectedLunarEclipse = callbackAction;
   gtk_widget_destroy(lunarEclipseStackable);
   putOptsPage(LUNAR_ECLIPSES);
@@ -5805,6 +5818,47 @@ static void drawOptsScreens(void)
 	      break;
 	    }
 	  }
+	} /* End of loop over i, which plots the planets which fit on the display */
+	if (!schematic && showComets) {
+	  double lComet, bComet, rComet;
+	  cometEphem *comet;
+
+	  printf("Preparing to plot any comets that fit \n");
+	  if (!cometDataReadIn)
+	    readInCometEphemerides(dataDir);
+	  comet = cometRoot;
+	  printf("cometRoot = %d\n", cometRoot);
+	  while (comet != NULL) {
+	    printf("Checking %s, valid = %d, %f %f %f\n", comet->name, comet->valid, comet->firstTJD, tJD, comet->lastTJD);
+	    if (comet->valid && (tJD >= comet->firstTJD) && (tJD <= comet->lastTJD)) {
+	      int i, nEntries;
+	      GdkPoint *orbitPoints;
+
+	      printf("Should plot %s, nEntries = %d\n", comet->name, comet->nEntries);
+	      nEntries = comet->nEntries;
+	      orbitPoints = (GdkPoint *)malloc(nEntries*sizeof(GdkPoint));
+	      if (unlikely(orbitPoints == NULL)) {
+		perror("orbitPoints");
+		exit(ERROR_EXIT);
+	      }
+	      /* Plot the comet orbit */
+	      for (i = 0; i < nEntries; i++) {
+		orbitPoints[i].y = SOLAR_SYSTEM_CENTER_Y - roundf(orbitScale*comet->radius[i]*cos(DEGREES_TO_RADIANS*comet->eLong[i])) - 23;
+		orbitPoints[i].x = SOLAR_SYSTEM_CENTER_X + roundf(orbitScale*comet->radius[i]*sin(DEGREES_TO_RADIANS*comet->eLong[i])) - 23;
+	      }
+	      gdk_draw_lines(pixmap, gC[OR_BLUE], orbitPoints, nEntries);
+	      free(orbitPoints);
+	      /* Now plot the commet itself (if it should be) */
+	      getCometRADec(dataDir, comet->name, tJD, FALSE, &lComet, &bComet, &rComet, NULL);
+	      y = SOLAR_SYSTEM_CENTER_Y - roundf(orbitScale*rComet*cos(DEGREES_TO_RADIANS*lComet));
+	      x = SOLAR_SYSTEM_CENTER_X + roundf(orbitScale*rComet*sin(DEGREES_TO_RADIANS*lComet));
+	      gdk_draw_arc(pixmap, planetGC, TRUE,
+			   x-33, y-33, 20, 20, 0, FULL_CIRCLE);
+	      gdk_draw_drawable(pixmap, gC[OR_BLUE], smallPlanetImages[0], 0, 0,
+				x-w/2-23, y-h/2-23, 20, 20);
+	    }
+	    comet = comet->next;
+	  }
 	}
 	if (j > 0) {
 	  if (j < nSolarSystemDays -1)
@@ -7354,11 +7408,138 @@ static void drawOptsScreens(void)
       }
     }
     break;
+  case COMET_SCREEN:
+#define LINE_SKIP (35)
+    {
+      int foundADisplayableComet = FALSE;
+      int tWidth, tHeight, line = 0;
+      double lHelio, bHelio, rHelio;
+      char scratchString[100];
+      cometEphem *comet;
+
+      needNewTime = TRUE;
+      lSTNow = lST();
+      if (!cometDataReadIn)
+	readInCometEphemerides(dataDir);
+      heliocentricEclipticCoordinates(dataDir, tJD, 2, &lHelio, &bHelio, &rHelio);
+      comet = cometRoot;
+      while (comet != NULL) {
+	if (comet->valid && (comet->firstTJD <= tJD) && (comet->lastTJD >= tJD)) {
+	  int cometBoldColor, cometColor, rAHH, rAMM, decDD, decMM;
+	  int hAHH, hAMM, decSign, hASign;
+	  double rA, dec, hA, mag, az, zA, el, lComet, bComet, rComet;
+	  double xEarth, yEarth, zEarth, xComet, yComet, zComet, distance;
+
+	  if (!foundADisplayableComet) {
+	    sprintf(scratchString, "Comet information for   ");
+	    makeTimeString(&scratchString[strlen(scratchString)], TRUE);
+	    renderPangoText(scratchString, OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			    pixmap, displayWidth>>1, 11+line, 0.0, TRUE, 0);
+	    line += 10+LINE_SKIP;
+	  }
+	  getCometRADec(dataDir, comet->name, tJD, FALSE, &lComet, &bComet, &rComet, &mag);
+	  lComet *= DEGREES_TO_RADIANS; bComet *= DEGREES_TO_RADIANS;
+	  getCometRADec(dataDir, comet->name, tJD, TRUE,  &rA,     &dec,    NULL,    &mag);
+	  xEarth = rHelio*cos(bHelio)*cos(lHelio);
+	  yEarth = rHelio*cos(bHelio)*sin(lHelio);
+	  zEarth = rHelio*sin(bHelio);
+	  xComet = rComet*cos(bComet)*cos(lComet);
+	  yComet = rComet*cos(bComet)*sin(lComet);
+	  zComet = rComet*sin(bComet);
+	  distance = sqrt(pow(xEarth-xComet, 2)+pow(yEarth-yComet, 2)+pow(zEarth-zComet, 2));
+	  azZA(rA, sin(dec), cos(dec), &az, &zA, FALSE);
+	  el = M_HALF_PI - zA;
+	  if (el > 0.0) {
+	    cometBoldColor = OR_WHITE;
+	    cometColor = OR_BLUE;
+	  } else
+	    cometBoldColor = cometColor = OR_GREY;
+	  renderPangoText("Comet", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 15, 20+line, 0.0, FALSE, 0);
+	  if (comet->nickName)
+	    sprintf(scratchString, "%s\t(%s)", comet->name, comet->nickName);
+	  else
+	    sprintf(scratchString, "%s", comet->name);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 25+tWidth, 20+line, 0.0, FALSE, 0);
+	  line += LINE_SKIP;
+	  if (dec < 0.0) {
+	    decSign = -1;
+	    dec *= -1.0;
+	  } else
+	    decSign = 1;
+	  hA = lSTNow - rA;
+	  doubleNormalize0to2pi(&rA); doubleNormalizeMinusPiToPi(&hA); doubleNormalize0to2pi(&az);
+	  if (hA < 0.0) {
+	    hASign = -1;
+	    hA *= -1.0;
+	  } else
+	    hASign = 1;
+	  rA /= HOURS_TO_RADIANS; hA /= HOURS_TO_RADIANS; dec /= DEGREES_TO_RADIANS; az /= DEGREES_TO_RADIANS; el /= DEGREES_TO_RADIANS;
+	  rAHH  = (int)rA;   rAMM = roundf(((rA  - (double)rAHH)*60.0));
+	  hAHH  = (int)hA;   hAMM = roundf(((hA  - (double)hAHH)*60.0));
+	  decDD = (int)dec; decMM = roundf(((dec - (double)decDD)*60.0));
+	  renderPangoText("RA", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 10, 20+line, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%02d:%02d", rAHH, rAMM);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 55, 20+line, 0.0, FALSE, 0);
+	  renderPangoText("Dec", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, displayWidth/3+10, 20+line, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%02d:%02d", decDD*decSign, decMM);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, displayWidth/3+65, 20+line, 0.0, FALSE, 0);
+	  renderPangoText("HA", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 2*displayWidth/3+10, 20+line, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%02d:%02d", hAHH*hASign, hAMM);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 2*displayWidth/3+65, 20+line, 0.0, FALSE, 0);
+	  line += LINE_SKIP;
+	  renderPangoText("Az", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 10, 20+line, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%6.2f", az);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 55, 20+line, 0.0, FALSE, 0);
+	  renderPangoText("El", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, displayWidth/3+10, 20+line, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%5.2f", el);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, displayWidth/3+65, 20+line, 0.0, FALSE, 0);
+	  renderPangoText("Mag", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 2*displayWidth/3+10, 20+line, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%4.1f", mag);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 2*displayWidth/3+65, 20+line, 0.0, FALSE, 0);
+	  line += LINE_SKIP;
+	  renderPangoText("Earth distance", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 10, 20+line, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%6.2f AU   %4.0f light min.", distance, distance*AU*1.0e9/SPEED_OF_LIGHT);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, displayWidth/2 - 50, 20+line, 0.0, FALSE, 0);
+	  line += LINE_SKIP;
+	  renderPangoText("Sun distance", cometColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, 10, 20+line, 0.0, FALSE, 0);
+	  sprintf(scratchString, "%6.2f AU   %4.0f light min.", rComet, rComet*AU*1.0e9/SPEED_OF_LIGHT);
+	  renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
+			  &tWidth, &tHeight, pixmap, displayWidth/2 - 50, 20+line, 0.0, FALSE, 0);
+
+	  line += LINE_SKIP;
+	  line += LINE_SKIP;
+	  foundADisplayableComet = TRUE;
+	}
+	comet = comet->next;
+      }
+      if (!foundADisplayableComet) {
+	renderPangoText("No comet info for this time", OR_WHITE, MEDIUM_PANGO_FONT,
+			&tWidth, &tHeight, pixmap, displayWidth >> 1, 20, 0.0, TRUE, 0);
+      }
+    }
+    break;
   case LUNAR_ECLIPSES:
     {
       int i, j, eclipseType;
 
-      if (displayLunarEclipse) {
+      if (displayEclipse) {
 	static int haveReadShorelineFile = FALSE;
 	int mM, dD, yYYY, dTMinusUT, hH, minute, sS, nShadedRegions, nPoints,
 	  penColor, parColor, totColor, region, xHome, pass, mapWidth, moonRadiusPixels,
@@ -8260,8 +8441,8 @@ static void drawOptsScreens(void)
 			  0.0, TRUE, 1);
 	  needNewTime = TRUE;
 	}
-	displayLunarEclipse = FALSE;
-      } else { /* Not displayLunarEclipse */
+	displayEclipse = FALSE;
+      } else { /* Not displayEclipse */
 	static int firstCall = TRUE;
 	static GtkObject *startYearAdj, *endYearAdj;
 	eclipseMenuItem *menuItem, *lastItem = NULL;
@@ -10335,6 +10516,7 @@ void switchScreens(void)
     displayConstellations   = FALSE;
     showStars               = showStars1;
     showPlanets             = showPlanets1;
+    showComets              = showComets1;
     showNames               = showNames1;
     showMeteors             = showMeteors1;
     showGreatCircles        = showGreatCircles1;
@@ -10350,6 +10532,7 @@ void switchScreens(void)
     showNames               = showNames2;
     showMeteors             = showMeteors2;
     showPlanets             = showPlanets2;
+    showComets              = showComets2;
     showGreatCircles        = showGreatCircles2;
     showDeepSky             = showDeepSky2;
     showBayer               = showBayer2;
@@ -10972,6 +11155,10 @@ void parseConfigFile(void)
 	  showPlanets = showPlanets1;
 	if (tokenCheck(inLine, "SHOW_PLANETS2", INT_TOKEN, &showPlanets2) && (labelMode))
 	  showPlanets = showPlanets2;
+	if (tokenCheck(inLine, "SHOW_COMETS1", INT_TOKEN, &showComets1) && (!labelMode))
+	  showComets = showComets1;
+	if (tokenCheck(inLine, "SHOW_COMETS2", INT_TOKEN, &showComets2) && (labelMode))
+	  showComets = showComets2;
 	if (tokenCheck(inLine, "SHOW_STAR_NAMES1", INT_TOKEN, &showNames1) && (!labelMode))
 	  showNames = showNames1;
 	if (tokenCheck(inLine, "SHOW_STAR_NAMES2", INT_TOKEN, &showNames2) && (labelMode))
@@ -11300,6 +11487,27 @@ void checkButtonCallback(GtkButton *button, gpointer userData)
     }
     if (labelMode)
       showPlanets = showPlanets2;
+  } else if (strstr("showComets1", userData) != NULL) {
+    if (gtk_toggle_button_get_active((GtkToggleButton *)cometCheckButton1)) {
+      optionsModified = TRUE;
+      showComets1 = TRUE;
+    } else {
+      optionsModified = TRUE;
+      showComets1 = FALSE;
+    }
+    if (!labelMode)
+      showComets = showComets1;
+  } else if (strstr("showComets2", userData) != NULL) {
+    if (gtk_toggle_button_get_active((GtkToggleButton *)cometCheckButton2)) {
+      optionsModified = TRUE;
+      showComets2 = TRUE;
+    } else {
+      optionsModified = TRUE;
+      showComets2 = FALSE;
+    }
+    if (labelMode)
+      showComets = showComets2;
+
   } else if (strstr("showGreatCircles1", userData) != NULL) {
     if (gtk_toggle_button_get_active((GtkToggleButton *)greatCirclesCheckButton1)) {
       optionsModified = TRUE;
@@ -11566,6 +11774,16 @@ void itemsButtonClicked(GtkButton *button, gpointer userData)
   g_signal_connect (G_OBJECT(planetCheckButton2), "clicked",
 		    G_CALLBACK(checkButtonCallback), "showPlanets2");
   
+  cometCheckButton1 = (GtkCheckButton *)gtk_check_button_new_with_label ("Display Comets");
+  gtk_toggle_button_set_active((GtkToggleButton *)cometCheckButton1, showComets1);
+  g_signal_connect (G_OBJECT(cometCheckButton1), "clicked",
+		    G_CALLBACK(checkButtonCallback), "showComets1");
+  
+  cometCheckButton2 = (GtkCheckButton *)gtk_check_button_new_with_label ("Display Comets");
+  gtk_toggle_button_set_active((GtkToggleButton *)cometCheckButton2, showComets2);
+  g_signal_connect (G_OBJECT(cometCheckButton2), "clicked",
+		    G_CALLBACK(checkButtonCallback), "showComets2");
+  
   meteorCheckButton1 = (GtkCheckButton *)gtk_check_button_new_with_label ("Meteor Radiants");
   gtk_toggle_button_set_active((GtkToggleButton *)meteorCheckButton1, showMeteors1);
   g_signal_connect (G_OBJECT(meteorCheckButton1), "clicked",
@@ -11631,6 +11849,10 @@ void itemsButtonClicked(GtkButton *button, gpointer userData)
   gtk_table_attach(GTK_TABLE(itemsTable), (GtkWidget *)planetCheckButton1, 0, 1, row, row+1,
 		   GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
   gtk_table_attach(GTK_TABLE(itemsTable), (GtkWidget *)planetCheckButton2, 1, 2, row, row+1,
+		   GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0); row++;
+  gtk_table_attach(GTK_TABLE(itemsTable), (GtkWidget *)cometCheckButton1, 0, 1, row, row+1,
+		   GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
+  gtk_table_attach(GTK_TABLE(itemsTable), (GtkWidget *)cometCheckButton2, 1, 2, row, row+1,
 		   GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0); row++;
   gtk_table_attach(GTK_TABLE(itemsTable), (GtkWidget *)meteorCheckButton1, 0, 1, row, row+1,
 		   GTK_EXPAND | GTK_FILL, GTK_FILL, 0, 0);
@@ -11974,6 +12196,20 @@ void lunarEclipsesScreen(GtkButton *button, gpointer userData)
     g_source_remove(timerID);
     timerID = (guint)0;
   }
+  fastUpdates = FALSE;
+}
+
+/*
+  Call back function for the Solar Eclipses page.
+*/
+void cometScreen(GtkButton *button, gpointer userData)
+{
+  putOptsPage(COMET_SCREEN);
+  if (timerID != (guint)0) {
+    g_source_remove(timerID);
+    timerID = (guint)0;
+  }
+  scheduleUpdates("cometScreen", DEFAULT_UPDATE_RATE);
   fastUpdates = FALSE;
 }
 
@@ -12400,7 +12636,7 @@ void optionsButtonClicked(GtkButton *button, gpointer userData)
     *bigMooncalButton, *smallMooncalButton, *planetCompassButton, *solarSystemSchematicButton,
     *solarSystemScaleButton, *meteorShowersButton, *timesPageButton, *analemmaButton,
     *planetElevationButton, *planetPhenomenaButton, *jovianMoonsButton,
-    *celestialNavigationButton, *lunarEclipsesButton;
+    *celestialNavigationButton, *lunarEclipsesButton, *cometButton;
 
   postageModeDisabled = TRUE;
   optionsTable = gtk_table_new(9, 2, FALSE);
@@ -12512,6 +12748,11 @@ void optionsButtonClicked(GtkButton *button, gpointer userData)
   g_signal_connect (G_OBJECT(lunarEclipsesButton), "clicked",
 		    G_CALLBACK (lunarEclipsesScreen), NULL);
 
+  cometButton = gtk_button_new_with_label ("Comets");
+  gtk_table_attach_defaults(GTK_TABLE(optionsTable), cometButton,
+			    1, 2, row, row+1);
+  g_signal_connect (G_OBJECT(cometButton), "clicked",
+		    G_CALLBACK (cometScreen), NULL);
   optionsStackable = hildon_stackable_window_new();
   g_signal_connect(G_OBJECT(optionsStackable), "destroy",
 		   G_CALLBACK(checkOptions), NULL);

@@ -23,10 +23,18 @@ the orrery program.
 */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <dirent.h>
 #include <math.h>
 #include "orrery.h"
 
 #define TRUE  (1)
+#define ERROR_EXIT (-1)
 
 /*
   References for Solar System object positions:
@@ -61,11 +69,89 @@ static elements element[N_PLANETS];
 static char *planetNames[N_PLANETS] = {"mercury", "venus",   "earthMoonBary",
          			"mars",    "jupiter", "saturn",
 		        	"uranus",  "neptune", "pluto"};
-
+static char *monthAbrs[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+			      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 static float V0[N_SOLAR_SYSTEM_OBJECTS] =
   {-26.0, 0.68, -4.40, 0.0, 0.0, -1.52, -9.40, -8.88, -7.19, -6.87, -1.00};
 
+cometEphem *cometRoot = NULL;
+ephemEntry *ephemRoot = NULL;
+int cometDataReadIn = FALSE; /* Don't bother reading in all the comet data until it's needed */
+
 void exit(int status);
+int getLine(int fD, char *buffer, int *eOF);
+double buildTJD(int year, int month, int day, int hour, int minute, int second, int nsec);
+
+double *vector(nl, nh)
+     int nl, nh;
+{
+  double *v;
+  
+  v=(double *)malloc((unsigned) (nh-nl+1)*sizeof(double));
+  if (!v) {
+    perror("allocation failure in dvector()");
+    exit(ERROR_EXIT);
+  }
+  return v-nl;
+}
+
+void free_vector(v, nl, nh)
+double *v;
+int nl, nh;
+{
+  free((char*) (v+nl));
+}
+
+void spline(x, y, n, y2)
+double x[], y[], y2[];
+int n;
+{
+  int i, k;
+  double p, qn, sig, un, *u, *vector();
+  void free_vector();
+  
+  u = vector(0, n-2);
+  y2[0] = u[0] = 0.0;
+  for (i = 1; i <= n-2; i++) {
+    sig = (x[i] - x[i-1])/(x[i+1] - x[i-1]);
+    p = sig*y2[i-1] + 2.0;
+    y2[i] = (sig - 1.0)/p;
+    u[i] = (y[i+1]-y[i])/(x[i+1]-x[i]) - (y[i]-y[i-1])/(x[i]-x[i-1]);
+    u[i] = (6.0*u[i]/(x[i+1]-x[i-1])-sig*u[i-1])/p;
+  }
+  qn = un = 0.0;
+  y2[n-1] = (un-qn*u[n-2])/(qn*y2[n-2]+1.0);
+  for (k = n-2; k >= 0; k--)
+    y2[k] = y2[k]*y2[k+1]+u[k];
+  free_vector(u, 0, n-2);
+}
+
+double splint(xa, ya, y2a, n, x)
+     double xa[], ya[], y2a[], x;
+     int n;
+{
+  int klo, khi, k;
+  double h, b, a;
+  void nrerror();
+  
+  klo = 0;
+  khi = n-1;
+  while (khi-klo > 1) {
+    k = (khi+klo) >> 1;
+    if (xa[k] > x)
+      khi=k;
+    else
+      klo=k;
+  }
+  h = xa[khi] - xa[klo];
+  if (h == 0.0) {
+    perror("Bad XA input to routine SPLINT");
+    exit(ERROR_EXIT);
+  }
+  a = (xa[khi] - x)/h;
+  b = (x - xa[klo])/h;
+  return(a*ya[klo]+b*ya[khi]+((a*a*a-a)*y2a[klo]+(b*b*b-b)*y2a[khi])*(h*h)/6.0);
+}
 
 float phase(float sunLambda, float earthLambda)
 {
@@ -173,6 +259,311 @@ void getMoonPosition(double tJD, double sunELong, double *rA, double *dec, doubl
   *F = 0.5*(1.0 - cos(lDoublePrime*DEGREES_TO_RADIANS - sunELong));
 }
 
+void calculateCometSplineData(void)
+/*
+  Use the arrays of comet ephemeris data to calculate the arrays needed for cubic
+  spline interpolation of the sampled values.
+*/
+{
+  cometEphem *comet;
+
+  comet = cometRoot;
+  while (comet != NULL) {
+    if (comet->valid) {
+      int nEntries = comet->nEntries;
+
+      spline(comet->tJD, comet->rA,     nEntries, &(comet->rA[nEntries])    );
+      spline(comet->tJD, comet->dec,    nEntries, &(comet->dec[nEntries])   );
+      spline(comet->tJD, comet->eLong,  nEntries, &(comet->eLong[nEntries]) );
+      spline(comet->tJD, comet->eLat,   nEntries, &(comet->eLat[nEntries])  );
+      spline(comet->tJD, comet->radius, nEntries, &(comet->radius[nEntries]));
+      spline(comet->tJD, comet->mag,    nEntries, &(comet->mag[nEntries])   );
+    }
+    comet = comet->next;
+  }
+}
+
+void readInCometEphemerides(char *dataDir)
+/*
+  Read in text ephemeris files produced by JPL Horizons program.   The files from
+  Horizons are edited as follows:
+
+  1) Comment lines are removed.
+  2) The JPL Horizons name of the comet is added as the first line in the file,
+     along with a more common name (optional) separated by a space.
+  3) The individual lines of the horizon output are edited a bit to make the
+     file more compact.   The fields are as follows:
+     Character Range      Description
+      0 ->  3           Year (2012, etc)
+      5 ->  7           Month ("Jan", "Feb" etc)
+      9 -> 10           Day of month
+     12 -> 13           Hour (HH)
+     15 -> 16           Minute (MM)
+     22 -> 32           RA (HH MM SS.SS)
+     34 -> 44           Dec (+DD MM SS.S)
+     47 -> 51           Magnitude (MM.MM)
+     54 -> 61           Ecliptic longitude DDD.DDDD
+     63 -> 70           Ecliptic latitude  +DD.DDDD
+     73 -> 86           radius (AU)
+ */
+{
+  int eOT, theFile, nEntries;
+  char *dirName, *fullFileName, inLine[133];
+  ephemEntry *newEphemEntry, *lastEphemEntry = NULL;
+  cometEphem *newCometEphem, *lastCometEphem = NULL;
+  DIR *dp;
+  struct dirent *ep;
+
+  dirName = malloc(strlen(dataDir)+strlen("/comets/")+1);
+  if (dirName == NULL) {
+    perror("comet directory name");
+    return;
+  }
+  sprintf(dirName, "%s/comets/", dataDir);
+  dp = opendir(dirName);
+  if (dp == NULL) {
+    perror("Opening comets directory");
+    return;
+  }
+  while ((ep = readdir(dp)) != NULL) {
+    if (strstr(ep->d_name, ".comet")) {
+      fullFileName = malloc(strlen(dirName)+strlen(ep->d_name)+1);
+      if (fullFileName != NULL) {
+	sprintf(fullFileName,"%s%s", dirName, ep->d_name);
+	theFile = open(fullFileName, O_RDONLY);
+	free(fullFileName);
+	if (theFile >= 0) {
+	  eOT = FALSE;
+	  getLine(theFile, &inLine[0], &eOT);
+	  if ((!eOT) && (strlen(inLine) > 0)) {
+	    char *token;
+
+	    newCometEphem = (cometEphem *)malloc(sizeof(cometEphem));
+	    if (newCometEphem == NULL) {
+	      perror("newCometEphem");
+	      exit(ERROR_EXIT);
+	    }
+	    token = strtok(inLine, " ");
+	    newCometEphem->name = malloc(strlen(token)+1);
+	    if (newCometEphem->name == NULL) {
+	      perror("newCometEphem->name");
+	      exit(ERROR_EXIT);
+	    }
+	    strcpy(newCometEphem->name, token);
+	    token = strtok(NULL, " ");
+	    if (token) {
+	      newCometEphem->nickName = malloc(strlen(token)+1);
+	      if (newCometEphem->nickName == NULL) {
+		perror("newCometEphem->nickName");
+		exit(ERROR_EXIT);
+	      }
+	      strcpy(newCometEphem->nickName, token);
+	    } else
+	      newCometEphem->nickName = NULL;
+	    newCometEphem->valid = TRUE;
+	    newCometEphem->firstTJD = newCometEphem->firstTJD = 0.0;
+	    newCometEphem->next = NULL;
+	    nEntries = 0;
+	    while ((!eOT) && (newCometEphem->valid)) {
+	      getLine(theFile, &inLine[0], &eOT);
+	      if (!eOT) {
+		if (strlen(inLine) >= 85) {
+		  int year, month, day, nRead, hH, mM;
+		  double mag, rA = 0.0, dec = 0.0, eLong, eLat, radius, tJD, sS;
+		  char token[20];
+
+		  strncpy(token, inLine, 4);
+		  token[4] = (char)0;
+		  nRead = sscanf(token, "%d", &year);
+		  if (nRead != 1)
+		    newCometEphem->valid = FALSE;
+		  strncpy(token, &inLine[5], 3);
+		  token[3] = (char)0;
+		  month = 0;
+		  while (strcmp(token, monthAbrs[month++]));
+		  strncpy(token, &inLine[9], 2);
+		  token[2] = (char)0;
+		  nRead = sscanf(token, "%d", &day);
+		  if (nRead != 1)
+		    newCometEphem->valid = FALSE;
+		  strncpy(token, &inLine[12], 2);
+		  token[2] = (char)0;
+		  nRead = sscanf(token, "%d", &hH);
+		  if (nRead != 1)
+		    newCometEphem->valid = FALSE;
+		  strncpy(token, &inLine[15], 2);
+		  token[2] = (char)0;
+		  nRead = sscanf(token, "%d", &mM);
+		  if (nRead != 1)
+		    newCometEphem->valid = FALSE;
+		  tJD = buildTJD(year-1900, month-1, day, hH, mM, 0, 0);
+		  nRead = sscanf(&inLine[22], "%d %d %lf", &hH, &mM, &sS);
+		  if (nRead == 3)
+		    rA = ((double)hH + ((double)mM)/60.0 + sS/3600)*HOURS_TO_RADIANS;
+		  else
+		    newCometEphem->valid = FALSE;
+		  nRead = sscanf(&inLine[34], "%d %d %lf", &hH, &mM, &sS);
+		  if (nRead == 3) {
+		    if (inLine[34] == '-') {
+		      mM *= -1;
+		      sS *= -1.0;
+		    }
+		    dec = ((double)hH + ((double)mM)/60.0 + sS/3600)*DEGREES_TO_RADIANS;
+		  } else
+		    newCometEphem->valid = FALSE;
+		  nRead = sscanf(&inLine[47], "%lf", &mag);
+		  if (nRead != 1)
+		    newCometEphem->valid = FALSE;
+		  nRead = sscanf(&inLine[54], "%lf", &eLong);
+		  if (nRead != 1)
+		    newCometEphem->valid = FALSE;
+		  nRead = sscanf(&inLine[63], "%lf", &eLat);
+		  if (nRead != 1)
+		    newCometEphem->valid = FALSE;
+		  nRead = sscanf(&inLine[73], "%lf", &radius);
+		  if (nRead != 1)
+		    newCometEphem->valid = FALSE;
+		  if (newCometEphem->valid) {
+		    newEphemEntry = (ephemEntry *)malloc(sizeof(ephemEntry));
+		    if (newEphemEntry == NULL) {
+		      perror("newEphemEntry");
+		      newCometEphem->valid = FALSE;
+		    } else {
+		      newEphemEntry->tJD    = tJD;
+		      newEphemEntry->rA     = rA;
+		      newEphemEntry->dec    = dec;
+		      newEphemEntry->eLong  = eLong;
+		      newEphemEntry->eLat   = eLat;
+		      newEphemEntry->radius = radius;
+		      newEphemEntry->mag    = mag;
+		      newEphemEntry->next   = NULL;
+		      if (ephemRoot == NULL) {
+			newCometEphem->firstTJD = tJD;
+			ephemRoot = newEphemEntry;
+		      } else
+			lastEphemEntry->next = newEphemEntry;
+		      newCometEphem->lastTJD = tJD;
+		      lastEphemEntry = newEphemEntry;
+		      nEntries++;
+		    }
+		  }
+		} else
+		  newCometEphem->valid = FALSE;
+	      }
+	    }
+	    if (newCometEphem->valid) {
+	      /*
+		We've built a linked list pointed to by ephemRoot which has all the
+		epehmeris entries in a linked list.   Now read all the entries in that
+		list, and transfer the data to arrays, while freeing the linked list
+		memory.
+	      */
+	      int element = 0;
+	      ephemEntry *current, *next;
+
+	      newCometEphem->nEntries = nEntries; /* Keep track of the size of the arrays */
+	      newCometEphem->tJD = (double *)malloc(2*nEntries*sizeof(double));
+	      if (newCometEphem->tJD == NULL) {
+		perror("newCometEphem->tJD");
+		exit(ERROR_EXIT);
+	      }
+	      newCometEphem->rA = (double *)malloc(2*nEntries*sizeof(double));
+	      if (newCometEphem->rA == NULL) {
+		perror("newCometEphem->rA");
+		exit(ERROR_EXIT);
+	      }
+	      newCometEphem->dec = (double *)malloc(2*nEntries*sizeof(double));
+	      if (newCometEphem->dec == NULL) {
+		perror("newCometEphem->dec");
+		exit(ERROR_EXIT);
+	      }
+	      newCometEphem->eLong = (double *)malloc(2*nEntries*sizeof(double));
+	      if (newCometEphem->eLong == NULL) {
+		perror("newCometEphem->eLong");
+		exit(ERROR_EXIT);
+	      }
+	      newCometEphem->eLat = (double *)malloc(2*nEntries*sizeof(double));
+	      if (newCometEphem->eLat == NULL) {
+		perror("newCometEphem->eLat");
+		exit(ERROR_EXIT);
+	      }
+	      newCometEphem->radius = (double *)malloc(2*nEntries*sizeof(double));
+	      if (newCometEphem->radius == NULL) {
+		perror("newCometEphem->radius");
+		exit(ERROR_EXIT);
+	      }
+	      newCometEphem->mag = (double *)malloc(2*nEntries*sizeof(double));
+	      if (newCometEphem->mag == NULL) {
+		perror("newCometEphem->mag");
+		exit(ERROR_EXIT);
+	      }
+	      current = ephemRoot;
+	      while (current != NULL) {
+		newCometEphem->tJD[element]    = current->tJD;
+		newCometEphem->rA[element]     = current->rA;
+		newCometEphem->dec[element]    = current->dec;
+		newCometEphem->eLong[element]  = current->eLong;
+		newCometEphem->eLat[element]   = current->eLat;
+		newCometEphem->radius[element] = current->radius;
+		newCometEphem->mag[element++]  = current->mag;
+		next = current->next;
+		free(current);
+		current = next;
+	      }
+	      ephemRoot = NULL;
+	    }
+	    if (cometRoot == NULL)
+	      cometRoot = newCometEphem;
+	    else
+	      lastCometEphem->next = newCometEphem;
+	    lastCometEphem = newCometEphem;
+	  }
+	  close(theFile);
+	}
+      }
+    }
+  }
+  free(dirName);
+  closedir(dp);
+  calculateCometSplineData();
+  cometDataReadIn = TRUE;
+}
+
+/*
+  Return the coordinates of the comet "name" for time TJD, if possible.   If successful, return TRUE,
+  otherwise return FALSE.
+ */
+int getCometRADec(char *dataDir, char *name, double tJD, int equatorial,
+		  double *coord1, double *coord2, double *coord3, double *mag)
+{
+  cometEphem *comet;
+
+  if (!cometDataReadIn) {
+    readInCometEphemerides(dataDir);
+  }
+  comet = cometRoot;
+  while (comet != NULL) {
+    if (!strcmp(name, comet->name) && comet->valid
+	&& (comet->firstTJD <= tJD) && (comet->lastTJD >= tJD)) {
+      int nEntries = comet->nEntries;
+
+      if (equatorial) {
+	*coord1 = splint(comet->tJD, comet->rA,  &(comet->rA[nEntries]),  nEntries, tJD);
+	*coord2 = splint(comet->tJD, comet->dec, &(comet->dec[nEntries]), nEntries, tJD);
+      } else {
+	*coord1 = splint(comet->tJD, comet->eLong,  &(comet->eLong[nEntries]),  nEntries, tJD);
+	*coord2 = splint(comet->tJD, comet->eLat,   &(comet->eLat[nEntries]),   nEntries, tJD);
+	*coord3 = splint(comet->tJD, comet->radius, &(comet->radius[nEntries]), nEntries, tJD);
+      }
+      if (mag != NULL)
+	*mag = splint(comet->tJD, comet->mag, &(comet->mag[nEntries]), nEntries, tJD);
+      return(TRUE);
+    }
+    comet = comet->next;
+  }
+  return(FALSE);
+}
+
 /*
   Read in the Keplerian Elements for Solar System Objects from files.
 */
@@ -188,7 +579,7 @@ void readInElements(char *dataDir)
     fileHandle = fopen(fileName, "r");
     if (fileName == NULL) {
       perror(fileName);
-      exit(-1);
+      exit(ERROR_EXIT);
     }
     nRead = fscanf(fileHandle, "%lf %lf %lf %lf %lf %lf",
 		   &(element[i].a[0]), &(element[i].e[0]), &(element[i].I[0]),
@@ -196,7 +587,7 @@ void readInElements(char *dataDir)
     if (nRead != 6) {
       fprintf(stderr, "Wrong number (%d) of numbers found on line 1 of %s\n",
 	      nRead, fileName);
-      exit(-1);
+      exit(ERROR_EXIT);
     }
     nRead = fscanf(fileHandle, "%lf %lf %lf %lf %lf %lf",
 		   &(element[i].dadt[0]), &(element[i].dedt[0]), &(element[i].dIdt[0]),
@@ -204,7 +595,7 @@ void readInElements(char *dataDir)
     if (nRead != 6) {
       fprintf(stderr, "Wrong number (%d) of numbers found on line 2 of %s\n",
 	      nRead, fileName);
-      exit(-1);
+      exit(ERROR_EXIT);
     }
     nRead = fscanf(fileHandle, "%lf %lf %lf %lf %lf %lf",
 		   &(element[i].a[1]), &(element[i].e[1]), &(element[i].I[1]),
@@ -212,7 +603,7 @@ void readInElements(char *dataDir)
     if (nRead != 6) {
       fprintf(stderr, "Wrong number (%d) of numbers found on line 3 of %s\n",
 	      nRead, fileName);
-      exit(-1);
+      exit(ERROR_EXIT);
     }
     nRead = fscanf(fileHandle, "%lf %lf %lf %lf %lf %lf",
 		   &(element[i].dadt[1]), &(element[i].dedt[1]), &(element[i].dIdt[1]),
@@ -220,14 +611,14 @@ void readInElements(char *dataDir)
     if (nRead != 6) {
       fprintf(stderr, "Wrong number (%d) of numbers found on line 4 of %s\n",
 	      nRead, fileName);
-      exit(-1);
+      exit(ERROR_EXIT);
     }
     nRead = fscanf(fileHandle, "%lf %lf %lf %lf",
 		   &(element[i].b), &(element[i].c), &(element[i]).s, &(element[i].f));
     if (nRead != 4) {
       fprintf(stderr, "Wrong number (%d) of numbers found on line 5 of %s\n",
 	      nRead, fileName);
-      exit(-1);
+      exit(ERROR_EXIT);
     }
     fclose(fileHandle);
   }
@@ -386,7 +777,7 @@ void planetInfo(char *dataDir, int planetNumber, double tJD, double *rA, double 
   default:
     fprintf(stderr, "Illegal planet number (%d) passed to planetInfo\n",
 	    planetNumber);
-    exit(-1);
+    exit(ERROR_EXIT);
   }
 }
 
