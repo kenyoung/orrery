@@ -131,7 +131,7 @@ float magScale2 = 1.0;
 float faintestStar;
 
 int showPlanets = TRUE; /* Plot planets in some way */
-int showComets = TRUE; /* Plot planets in some way */
+int showComets = FALSE; /* Plot planets in some way */
 int showStars = TRUE; /* Plot fixed objects (stars, galaxies, etc) */
 int displayConstellations = FALSE; /* Plot constellation stick figures */
 int showNames = FALSE; /* Label bright/famous stars */
@@ -186,8 +186,8 @@ int showStars1             = TRUE;  /* Plot stars                               
 int showStars2             = TRUE;
 int showPlanets1           = TRUE;  /* Plot planets                                   */
 int showPlanets2           = TRUE;
-int showComets1            = TRUE;  /* Plot comets                                    */
-int showComets2            = TRUE;
+int showComets1            = FALSE; /* Plot comets                                    */
+int showComets2            = FALSE;
 int showDeepSky1           = TRUE;  /* Plot deep sky objects                          */
 int showDeepSky2           = FALSE;
 int showNames1             = FALSE; /* Plot the names of stars on page 1              */
@@ -1158,6 +1158,25 @@ double gMST(double tJD)
   while (t0 >= 24.0)
     t0 -= 24.0;
   return(t0);
+}
+
+/*
+  Fix up situations where rounding has caused a value of 60 to be stored in a minutes
+or seconds field.   Returns TRUE if the hours field wraps through 24.
+ */
+int fix60s(int *hours, int *min)
+{
+  int overflow = FALSE;
+
+  if (*min > 59) {
+    *hours += 1;
+    *min -= 60;
+  }
+  if (*hours > 23) {
+    overflow = TRUE;
+    *hours -= 24;
+  }
+  return(overflow);
 }
 
 /*
@@ -2495,6 +2514,69 @@ static void plotStarNames(void)
   }
 }
 
+#define SOLAR_SYSTEM_CENTER_X (263)
+#define SOLAR_SYSTEM_CENTER_Y (300)
+#define SCHEMATIC_ORBIT_INCREMENT (23)
+#define ZOOM_SOLAR_SYSTEM_IN (-10000)
+#define ZOOM_SOLAR_SYSTEM_OUT (10000)
+void plotComet(int x, int y, float angle)
+{
+  int i, j;
+  float r, tAngle;
+
+  gdk_draw_arc(pixmap, gC[OR_WHITE], TRUE,
+	       x-3, y-3, 7, 7, 0, FULL_CIRCLE);
+  gdk_draw_arc(pixmap, gC[OR_BLUE_GREEN], TRUE,
+	       x-2, y-2, 5, 5, 0, FULL_CIRCLE);
+  gdk_draw_arc(pixmap, gC[OR_GREEN], TRUE,
+	       x-1, y-1, 3, 3, 0, FULL_CIRCLE);
+  for (i = -2; i < 3; i++) {
+    tAngle = angle + ((float)i)*M_PI/12.0;
+    for (j = 5; j < 19; j += 2) {
+      r = sqrtf(2.0)*(float)j;
+      gdk_draw_point(pixmap, gC[OR_WHITE], x+(int)roundf(r*cosf(tAngle)), y+(int)roundf(r*sinf(tAngle)));
+    }
+  }
+}
+
+static void plotComets(void)
+{
+  float sunAz, sunZA, illum, mag;
+  double sunRA, sunDec, az, zA;
+  cometEphem *comet;
+
+  needNewTime = TRUE;
+  lST();
+  planetInfo(dataDir, EARTH, tJD, &sunRA, &sunDec, &illum, &mag);
+  azZA(sunRA, sin(sunDec), cos(sunDec), &az, &zA, FALSE);
+  sunAz = (float)az;
+  sunZA = (float)zA;
+  if (!cometDataReadIn)
+    readInCometEphemerides(dataDir);
+  comet = cometRoot;
+  while (comet != NULL) {
+    if (comet->valid && (tJD >= comet->firstTJD) && (tJD <= comet->lastTJD)) {
+      double rA, dec, theta, eta;
+
+      getCometRADec(dataDir, comet->name, tJD, TRUE, &rA, &dec, NULL, NULL);
+      if (azZA(rA, sin(dec), cos(dec), &az, &zA, TRUE)) {
+	if (thetaEta(az, zA, &theta, &eta)) {
+	  int x, y;
+	  float mX, mY, sunAngle;
+
+	  mY = (float)theta;
+	  mercator((float)eta, &mX);
+	  mercatorToPixels(mX, mY, &x, &y);
+	  sunAngle = greatCircleDirection((float)az, (float)(M_HALF_PI-zA),
+					  sunAz, M_HALF_PI-sunZA);
+	  plotComet(x, y, M_HALF_PI+sunAngle);
+	}
+      }
+    }
+    comet = comet->next;
+  }
+}
+
 static void plotPlanets(void)
 {
   static int firstCall = TRUE;
@@ -3316,6 +3398,8 @@ static void redrawScreenTransverseMercator(void)
     plotFixedObjects();
   if (showPlanets)
     plotPlanets();
+  if (showComets)
+    plotComets();
   if (showNames)
     plotStarNames();
   if (showBayer)
@@ -4679,6 +4763,7 @@ static void drawOptsScreens(void)
 	rAHours = theTime*24.0;
 	rAHH = (int)rAHours;
 	rAMM = (int)((rAHours - (float)rAHH)*60.0 + 0.5);
+	fix60s(&rAHH, &rAMM);
 	sprintf(scratchString, "%02d:%02d ", rAHH, rAMM);
 	gdk_draw_string(pixmap, smallFont, labelGC,
 			SUNLINE_X_OFFSET+gdk_string_width(smallFont, "88/88/8888  "),
@@ -4727,6 +4812,7 @@ static void drawOptsScreens(void)
 	rAHours = theTime*24.0;
 	rAHH = (int)rAHours;
 	rAMM = (int)((rAHours - (float)rAHH)*60.0 + 0.5);
+	fix60s(&rAHH, &rAMM);
 	sprintf(scratchString, "%02d:%02d ", rAHH, rAMM);
 	gdk_draw_string(pixmap, smallFont, labelGC,
 			SUNLINE_X_OFFSET+gdk_string_width(smallFont, "88/88/8888  Sunrise 88:88 UT Az = 888.8  "),
@@ -4746,11 +4832,8 @@ static void drawOptsScreens(void)
 	  radiansToHHMMSS((sunSet - sunRise) * M_2PI, &hH, &mM, &sS);
 	  if (sS > 30.0) {
 	    mM += 1;
-	    if (mM > 59) {
-	      mM -= 60;
-	      hH += 1;
-	    }
 	  }
+	  fix60s(&hH, &mM);
 	  renderPangoText("Length of day", OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
 			  pixmap, 197, sunInfoRow + 3*ABOUT_ROW_STEP,
 			  0.0, TRUE, 0);
@@ -4884,6 +4967,7 @@ static void drawOptsScreens(void)
     rAHours = sunRA/HOURS_TO_RADIANS; decDegrees = sunDec/DEGREES_TO_RADIANS;
     rAHH = (int)rAHours;
     rAMM = (int)((rAHours - (float)rAHH)*60.0);
+    fix60s(&rAHH, &rAMM);
     sprintf(scratchString, "%02d:%02d", rAHH, rAMM);
     renderPangoText(scratchString, OR_WHITE, SMALL_PANGO_FONT, &tWidth, &tHeight,
 		    pixmap, 18 + displayWidth/10, row*ABOUT_ROW_STEP + 11, 0.0, TRUE, 0);
@@ -4957,6 +5041,7 @@ static void drawOptsScreens(void)
 	rAHours = theTime*24.0;
 	rAHH = (int)rAHours;
 	rAMM = (int)((rAHours - (float)rAHH)*60.0 + 0.5);
+	fix60s(&rAHH, &rAMM);
 	sprintf(scratchString, "%02d:%02d ", rAHH, rAMM);
 	if (day == (N_RISE_SET_DAYS/2))
 	  renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
@@ -5004,6 +5089,7 @@ static void drawOptsScreens(void)
 	rAHours = theTime*24.0;
 	rAHH = (int)rAHours;
 	rAMM = (int)((rAHours - (float)rAHH)*60.0 + 0.5);
+	fix60s(&rAHH, &rAMM);
 	sprintf(scratchString, "%02d:%02d ", rAHH, rAMM);
 	if (day == (N_RISE_SET_DAYS/2))
 	  renderPangoText(scratchString, OR_WHITE, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
@@ -5082,6 +5168,7 @@ static void drawOptsScreens(void)
 	  tempDay += 1.0;
 	hH = (int)(tempDay * 24.0);
 	mM = (int)((tempDay * 24.0 - (double)hH) * 60.0);
+	fix60s(&hH, &mM);
 	tJDToDate(nextFirstQ[i], &year, &month, &day);
 	sprintf(scratchString, "%02d/%02d/%4d %02d:%02d",
 		month, day, year, hH, mM);
@@ -5094,6 +5181,7 @@ static void drawOptsScreens(void)
 	  tempDay += 1.0;
 	hH = (int)(tempDay * 24.0);
 	mM = (int)((tempDay * 24.0 - (double)hH) * 60.0);
+	fix60s(&rAHH, &rAMM);
 	tJDToDate(nextFull[i], &year, &month, &day);
 	sprintf(scratchString, "%02d/%02d/%4d %02d:%02d",
 		month, day, year, hH, mM);
@@ -5106,6 +5194,7 @@ static void drawOptsScreens(void)
 	  tempDay += 1.0;
 	hH = (int)(tempDay * 24.0);
 	mM = (int)((tempDay * 24.0 - (double)hH) * 60.0);
+	fix60s(&rAHH, &rAMM);
 	tJDToDate(nextLastQ[i], &year, &month, &day);
 	sprintf(scratchString, "%02d/%02d/%4d %02d:%02d",
 		month, day, year, hH, mM);
@@ -5365,11 +5454,6 @@ static void drawOptsScreens(void)
   case SOLAR_SYSTEM_SCHEMATIC_SCREEN:
     schematic = TRUE;
   case SOLAR_SYSTEM_SCALE_SCREEN:
-#define SOLAR_SYSTEM_CENTER_X (263)
-#define SOLAR_SYSTEM_CENTER_Y (300)
-#define SCHEMATIC_ORBIT_INCREMENT (23)
-#define ZOOM_SOLAR_SYSTEM_IN (-10000)
-#define ZOOM_SOLAR_SYSTEM_OUT (10000)
     {
       int i, j, w, h, k, m, n, eD, year, month, day, tDayIncSign, plotPlanet;
       int ii, x1, x2, y1, y2;
@@ -5823,18 +5907,14 @@ static void drawOptsScreens(void)
 	  double lComet, bComet, rComet;
 	  cometEphem *comet;
 
-	  printf("Preparing to plot any comets that fit \n");
 	  if (!cometDataReadIn)
 	    readInCometEphemerides(dataDir);
 	  comet = cometRoot;
-	  printf("cometRoot = %d\n", cometRoot);
 	  while (comet != NULL) {
-	    printf("Checking %s, valid = %d, %f %f %f\n", comet->name, comet->valid, comet->firstTJD, tJD, comet->lastTJD);
 	    if (comet->valid && (tJD >= comet->firstTJD) && (tJD <= comet->lastTJD)) {
 	      int i, nEntries;
 	      GdkPoint *orbitPoints;
 
-	      printf("Should plot %s, nEntries = %d\n", comet->name, comet->nEntries);
 	      nEntries = comet->nEntries;
 	      orbitPoints = (GdkPoint *)malloc(nEntries*sizeof(GdkPoint));
 	      if (unlikely(orbitPoints == NULL)) {
@@ -5843,23 +5923,27 @@ static void drawOptsScreens(void)
 	      }
 	      /* Plot the comet orbit */
 	      for (i = 0; i < nEntries; i++) {
-		orbitPoints[i].y = SOLAR_SYSTEM_CENTER_Y - roundf(orbitScale*comet->radius[i]*cos(DEGREES_TO_RADIANS*comet->eLong[i])) - 23;
-		orbitPoints[i].x = SOLAR_SYSTEM_CENTER_X + roundf(orbitScale*comet->radius[i]*sin(DEGREES_TO_RADIANS*comet->eLong[i])) - 23;
+		double lr, cbr, r;
+
+		r = comet->radius[i];
+		lr = comet->eLong[i]*DEGREES_TO_RADIANS;
+		cbr = cos(comet->eLat[i]*DEGREES_TO_RADIANS);
+		orbitPoints[i].x = SOLAR_SYSTEM_CENTER_X - roundf(orbitScale*r*cbr*cos(lr)) - 23;
+		orbitPoints[i].y = SOLAR_SYSTEM_CENTER_Y + roundf(orbitScale*r*cbr*sin(lr)) - 23;
 	      }
-	      gdk_draw_lines(pixmap, gC[OR_BLUE], orbitPoints, nEntries);
+	      gdk_draw_lines(pixmap, gC[OR_GREEN], orbitPoints, nEntries);
 	      free(orbitPoints);
 	      /* Now plot the commet itself (if it should be) */
 	      getCometRADec(dataDir, comet->name, tJD, FALSE, &lComet, &bComet, &rComet, NULL);
-	      y = SOLAR_SYSTEM_CENTER_Y - roundf(orbitScale*rComet*cos(DEGREES_TO_RADIANS*lComet));
-	      x = SOLAR_SYSTEM_CENTER_X + roundf(orbitScale*rComet*sin(DEGREES_TO_RADIANS*lComet));
-	      gdk_draw_arc(pixmap, planetGC, TRUE,
-			   x-33, y-33, 20, 20, 0, FULL_CIRCLE);
-	      gdk_draw_drawable(pixmap, gC[OR_BLUE], smallPlanetImages[0], 0, 0,
-				x-w/2-23, y-h/2-23, 20, 20);
+	      x = SOLAR_SYSTEM_CENTER_X -
+		roundf(orbitScale*rComet*cos(DEGREES_TO_RADIANS*bComet)*cos(DEGREES_TO_RADIANS*lComet));
+	      y = SOLAR_SYSTEM_CENTER_Y +
+		roundf(orbitScale*rComet*cos(DEGREES_TO_RADIANS*bComet)*sin(DEGREES_TO_RADIANS*lComet));
+	      plotComet(x-23, y-23, atan2f(y-SOLAR_SYSTEM_CENTER_Y, x-SOLAR_SYSTEM_CENTER_X));
 	    }
 	    comet = comet->next;
 	  }
-	}
+	} /* End of comet portion */
 	if (j > 0) {
 	  if (j < nSolarSystemDays -1)
 	    gdk_draw_drawable(drawingArea->window,
@@ -7892,8 +7976,7 @@ static void drawOptsScreens(void)
 	    if (hours < 0.0)
 	      hours += 24.0;
 	    hH = (int)hours; mM = (int)((hours - (double)hH)*60.0 + 0.5);
-	    if (mM >= 60)
-	      mM = 59;
+	    fix60s(&hH, &mM);
 	    renderPangoText(typeString, OR_BLUE, SMALL_PANGO_FONT, &tWidth, &tHeight,
 			    pixmap, textOffset,
 			    UMBRA_MAP_OFFSET - UMBRA_MAP_HEIGHT/2 - lineOffset - 12,
@@ -8188,15 +8271,9 @@ static void drawOptsScreens(void)
 	    tJDToHHMMSS(riseTime, &hH, &mM, &sS);
 	  else if (setTime != 0.0)
 	    tJDToHHMMSS(setTime, &hH, &mM, &sS);
-	  if (sS > 30.0) {
+	  if (sS > 30.0)
 	    mM += 1;
-	    if (mM > 59) {
-	      mM = 0;
-	      hH += 1;
-	      if (hH > 23)
-		hH = 0;
-	    }
-	  }
+	  fix60s(&hH, &mM);
 	  minutesPen = ((float)nPenSeen)*trackStep*1440.0 + 0.1; iMinutesPen = roundf(minutesPen);
 	  minutesPar = ((float)nParSeen)*trackStep*1440.0 + 0.1; iMinutesPar = roundf(minutesPar);
 	  minutesTot = ((float)nTotSeen)*trackStep*1440.0 + 0.1; iMinutesTot = roundf(minutesTot);

@@ -299,12 +299,12 @@ void readInCometEphemerides(char *dataDir)
       9 -> 10           Day of month
      12 -> 13           Hour (HH)
      15 -> 16           Minute (MM)
-     22 -> 32           RA (HH MM SS.SS)
-     34 -> 44           Dec (+DD MM SS.S)
-     47 -> 51           Magnitude (MM.MM)
-     54 -> 61           Ecliptic longitude DDD.DDDD
-     63 -> 70           Ecliptic latitude  +DD.DDDD
-     73 -> 86           radius (AU)
+     18 -> 28           RA (HH MM SS.SS)
+     30 -> 40           Dec (+DD MM SS.S)
+     43 -> 47           Magnitude (MM.MM)
+     49 -> 56           Ecliptic longitude DDD.DDDD
+     58 -> 65           Ecliptic latitude  +DD.DDDD
+     67 -> 79           radius (AU)
  */
 {
   int eOT, theFile, nEntries;
@@ -367,7 +367,7 @@ void readInCometEphemerides(char *dataDir)
 	    while ((!eOT) && (newCometEphem->valid)) {
 	      getLine(theFile, &inLine[0], &eOT);
 	      if (!eOT) {
-		if (strlen(inLine) >= 85) {
+		if (strlen(inLine) >= 79) {
 		  int year, month, day, nRead, hH, mM;
 		  double mag, rA = 0.0, dec = 0.0, eLong, eLat, radius, tJD, sS;
 		  char token[20];
@@ -375,8 +375,10 @@ void readInCometEphemerides(char *dataDir)
 		  strncpy(token, inLine, 4);
 		  token[4] = (char)0;
 		  nRead = sscanf(token, "%d", &year);
-		  if (nRead != 1)
+		  if (nRead != 1) {
+		    fprintf(stderr, "(1) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
+		  }
 		  strncpy(token, &inLine[5], 3);
 		  token[3] = (char)0;
 		  month = 0;
@@ -384,45 +386,63 @@ void readInCometEphemerides(char *dataDir)
 		  strncpy(token, &inLine[9], 2);
 		  token[2] = (char)0;
 		  nRead = sscanf(token, "%d", &day);
-		  if (nRead != 1)
+		  if (nRead != 1) {
+		    fprintf(stderr, "(2) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
+		  }
 		  strncpy(token, &inLine[12], 2);
 		  token[2] = (char)0;
 		  nRead = sscanf(token, "%d", &hH);
-		  if (nRead != 1)
+		  if (nRead != 1) {
+		    fprintf(stderr, "(3) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
+		  }
 		  strncpy(token, &inLine[15], 2);
 		  token[2] = (char)0;
 		  nRead = sscanf(token, "%d", &mM);
-		  if (nRead != 1)
+		  if (nRead != 1) {
+		    fprintf(stderr, "(4) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
+		  }
 		  tJD = buildTJD(year-1900, month-1, day, hH, mM, 0, 0);
-		  nRead = sscanf(&inLine[22], "%d %d %lf", &hH, &mM, &sS);
+		  nRead = sscanf(&inLine[18], "%d %d %lf", &hH, &mM, &sS);
 		  if (nRead == 3)
 		    rA = ((double)hH + ((double)mM)/60.0 + sS/3600)*HOURS_TO_RADIANS;
-		  else
+		  else {
+		    fprintf(stderr, "(5) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
-		  nRead = sscanf(&inLine[34], "%d %d %lf", &hH, &mM, &sS);
+		  }
+		  nRead = sscanf(&inLine[30], "%d %d %lf", &hH, &mM, &sS);
 		  if (nRead == 3) {
 		    if (inLine[34] == '-') {
 		      mM *= -1;
 		      sS *= -1.0;
 		    }
 		    dec = ((double)hH + ((double)mM)/60.0 + sS/3600)*DEGREES_TO_RADIANS;
-		  } else
+		  } else {
+		    fprintf(stderr, "(6) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
-		  nRead = sscanf(&inLine[47], "%lf", &mag);
-		  if (nRead != 1)
+		  }
+		  nRead = sscanf(&inLine[43], "%lf", &mag);
+		  if (nRead != 1) {
+		    fprintf(stderr, "(7) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
-		  nRead = sscanf(&inLine[54], "%lf", &eLong);
-		  if (nRead != 1)
+		  }
+		  nRead = sscanf(&inLine[49], "%lf", &eLong);
+		  if (nRead != 1) {
+		    fprintf(stderr, "(8) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
-		  nRead = sscanf(&inLine[63], "%lf", &eLat);
-		  if (nRead != 1)
+		  }
+		  nRead = sscanf(&inLine[58], "%lf", &eLat);
+		  if (nRead != 1) {
+		    fprintf(stderr, "(9) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
-		  nRead = sscanf(&inLine[73], "%lf", &radius);
-		  if (nRead != 1)
+		  }
+		  nRead = sscanf(&inLine[67], "%lf", &radius);
+		  if (nRead != 1) {
+		    fprintf(stderr, "(10) nRead != 1 (%d)\n", nRead);
 		    newCometEphem->valid = FALSE;
+		  }
 		  if (newCometEphem->valid) {
 		    newEphemEntry = (ephemEntry *)malloc(sizeof(ephemEntry));
 		    if (newEphemEntry == NULL) {
@@ -447,8 +467,10 @@ void readInCometEphemerides(char *dataDir)
 		      nEntries++;
 		    }
 		  }
-		} else
+		} else {
+		  fprintf(stderr, "Comet string too short (%d)\n", strlen(inLine));
 		  newCometEphem->valid = FALSE;
+		}
 	      }
 	    }
 	    if (newCometEphem->valid) {
@@ -458,7 +480,9 @@ void readInCometEphemerides(char *dataDir)
 		list, and transfer the data to arrays, while freeing the linked list
 		memory.
 	      */
+	      int firstEntry;
 	      int element = 0;
+	      double unwrap, lastELong;
 	      ephemEntry *current, *next;
 
 	      newCometEphem->nEntries = nEntries; /* Keep track of the size of the arrays */
@@ -498,16 +522,34 @@ void readInCometEphemerides(char *dataDir)
 		exit(ERROR_EXIT);
 	      }
 	      current = ephemRoot;
+	      unwrap = 0.0;
+	      firstEntry = TRUE;
 	      while (current != NULL) {
 		newCometEphem->tJD[element]    = current->tJD;
 		newCometEphem->rA[element]     = current->rA;
 		newCometEphem->dec[element]    = current->dec;
-		newCometEphem->eLong[element]  = current->eLong;
+		if (!firstEntry) {
+		  /*
+		    Handle unwrapping - the Heliocentric longitude may abruptly go from a number like
+		    359 degrees to 2 degrees on the next entry.   Since these values will be interpolated,
+		    the interpolation would fail if that happened.   So in a transition like that, we
+		    use the variable "unwrap" to make the transition 359->362 instead, which interpolates
+		    smoothly.   Since the eliocentric longitude is only used as a argument to Trig.
+		    functions, extra 360 degree offsets won't matter.
+		   */
+		  if ((lastELong - current->eLong) > 180.0)
+		    unwrap += 360.0;
+		  else if ((lastELong - current->eLong) < -180.0)
+		    unwrap -= 360.0;
+		}
+		newCometEphem->eLong[element]  = current->eLong + unwrap;
+		lastELong = current->eLong;
 		newCometEphem->eLat[element]   = current->eLat;
 		newCometEphem->radius[element] = current->radius;
 		newCometEphem->mag[element++]  = current->mag;
 		next = current->next;
 		free(current);
+		firstEntry = FALSE;
 		current = next;
 	      }
 	      ephemRoot = NULL;
