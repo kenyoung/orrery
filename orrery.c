@@ -1232,6 +1232,13 @@ void floatNormalize0to2pi(float *angle)
   *angle = (float)temp;
 }
 
+void floatNormalizeMinusPiToPi(float *angle)
+{
+  floatNormalize0to2pi(angle);
+  while (*angle > M_PI)
+    *angle -= M_2PI;
+}
+
 void doubleNormalize0to360(double *a)
 {
   double temp;
@@ -2519,22 +2526,42 @@ static void plotStarNames(void)
 #define SCHEMATIC_ORBIT_INCREMENT (23)
 #define ZOOM_SOLAR_SYSTEM_IN (-10000)
 #define ZOOM_SOLAR_SYSTEM_OUT (10000)
-void plotComet(int x, int y, float angle)
+void plotComet(int x, int y, float angle, int printName, char *name, int yClipLow, int yClipHigh)
 {
   int i, j;
   float r, tAngle;
 
-  gdk_draw_arc(pixmap, gC[OR_WHITE], TRUE,
-	       x-3, y-3, 7, 7, 0, FULL_CIRCLE);
-  gdk_draw_arc(pixmap, gC[OR_BLUE_GREEN], TRUE,
-	       x-2, y-2, 5, 5, 0, FULL_CIRCLE);
-  gdk_draw_arc(pixmap, gC[OR_GREEN], TRUE,
-	       x-1, y-1, 3, 3, 0, FULL_CIRCLE);
-  for (i = -2; i < 3; i++) {
-    tAngle = angle + ((float)i)*M_PI/12.0;
-    for (j = 5; j < 19; j += 2) {
-      r = sqrtf(2.0)*(float)j;
-      gdk_draw_point(pixmap, gC[OR_WHITE], x+(int)roundf(r*cosf(tAngle)), y+(int)roundf(r*sinf(tAngle)));
+  if (printName) {
+    int stringWidth, stringHeight, offset;
+
+    floatNormalizeMinusPiToPi(&angle);
+    if (angle < 0.0)
+      offset = 15;
+    else
+      offset = -5;
+    stringWidth  = gdk_string_width(smallFont, name);
+    stringHeight = gdk_string_height(smallFont, name);
+    if ((y+offset-stringHeight > yClipLow) && ((y+offset+stringHeight) < yClipHigh))
+      gdk_draw_string(pixmap, smallFont, gC[OR_BLUE_GREEN], x-stringWidth/2,
+		      y+offset, name);
+  }
+  if (((y-3) > yClipLow) && ((y+3) < yClipHigh)) {
+    gdk_draw_arc(pixmap, gC[OR_WHITE], TRUE,
+		 x-3, y-3, 7, 7, 0, FULL_CIRCLE);
+    gdk_draw_arc(pixmap, gC[OR_BLUE_GREEN], TRUE,
+		 x-2, y-2, 5, 5, 0, FULL_CIRCLE);
+    gdk_draw_arc(pixmap, gC[OR_GREEN], TRUE,
+		 x-1, y-1, 3, 3, 0, FULL_CIRCLE);
+    for (i = -2; i < 3; i++) {
+      tAngle = angle + ((float)i)*M_PI/12.0;
+      for (j = 5; j < 19; j += 2) {
+	int yy;
+	
+	r = sqrtf(2.0)*(float)j;
+	yy =  y+(int)roundf(r*sinf(tAngle));
+	if ((yy > yClipLow) && (yy < yClipHigh))
+	  gdk_draw_point(pixmap, gC[OR_WHITE], x+(int)roundf(r*cosf(tAngle)), yy);
+      }
     }
   }
 }
@@ -2569,7 +2596,13 @@ static void plotComets(void)
 	  mercatorToPixels(mX, mY, &x, &y);
 	  sunAngle = greatCircleDirection((float)az, (float)(M_HALF_PI-zA),
 					  sunAz, M_HALF_PI-sunZA);
-	  plotComet(x, y, M_HALF_PI+sunAngle);
+	  if (TRUE)
+	    if (comet->nickName == NULL)
+	      plotComet(x, y, M_HALF_PI+sunAngle, TRUE, comet->name, 0, displayHeight);
+	    else
+	      plotComet(x, y, M_HALF_PI+sunAngle, TRUE, comet->nickName, 0, displayHeight);
+	  else
+	    plotComet(x, y, M_HALF_PI+sunAngle, FALSE, NULL, 0, displayHeight);
 	}
       }
     }
@@ -5482,17 +5515,15 @@ static void drawOptsScreens(void)
 	dayIncSign = 1.0;
       nSolarSystemDays = abs(dayInc);
       j = 0;
+#define SS_BLANKING_BASE (2*BIG_FONT_OFFSET)
+#define SS_BLANKING_HEIGHT (drawingArea->allocation.height*6/7 - 14 - 2*BIG_FONT_OFFSET)
       do {
 	if (j == 0)
-	  gdk_draw_rectangle(pixmap, drawingArea->style->black_gc,
-			     TRUE, 0, 0,
-			     drawingArea->allocation.width,
-			     drawingArea->allocation.height);
+	  gdk_draw_rectangle(pixmap, drawingArea->style->black_gc, TRUE, 0, 0,
+			     drawingArea->allocation.width, drawingArea->allocation.height);
 	else
-	  gdk_draw_rectangle(pixmap, drawingArea->style->black_gc,
-			     TRUE, 0, BIG_FONT_OFFSET,
-			     drawingArea->allocation.width,
-			     drawingArea->allocation.height*6/7 - 14 - BIG_FONT_OFFSET);
+	  gdk_draw_rectangle(pixmap, drawingArea->style->black_gc, TRUE, 0, SS_BLANKING_BASE,
+			     drawingArea->allocation.width, SS_BLANKING_HEIGHT);
 	solarSystemButtonWidth = displayWidth/5 - 1;
 	solarSystemButtonHeight = displayHeight/14 + 5;
 	if (!schematic) {
@@ -5904,6 +5935,7 @@ static void drawOptsScreens(void)
 	  }
 	} /* End of loop over i, which plots the planets which fit on the display */
 	if (!schematic && showComets) {
+	  int j;
 	  double lComet, bComet, rComet;
 	  cometEphem *comet;
 
@@ -5922,24 +5954,44 @@ static void drawOptsScreens(void)
 		exit(ERROR_EXIT);
 	      }
 	      /* Plot the comet orbit */
+	      j = 0;
 	      for (i = 0; i < nEntries; i++) {
+		int y;
 		double lr, cbr, r;
 
 		r = comet->radius[i];
 		lr = comet->eLong[i]*DEGREES_TO_RADIANS;
 		cbr = cos(comet->eLat[i]*DEGREES_TO_RADIANS);
-		orbitPoints[i].x = SOLAR_SYSTEM_CENTER_X - roundf(orbitScale*r*cbr*cos(lr)) - 23;
-		orbitPoints[i].y = SOLAR_SYSTEM_CENTER_Y + roundf(orbitScale*r*cbr*sin(lr)) - 23;
+		y = SOLAR_SYSTEM_CENTER_Y + roundf(orbitScale*r*cbr*sin(lr)) - 23;
+		if ((y >= SS_BLANKING_BASE) && (y <= SS_BLANKING_BASE+SS_BLANKING_HEIGHT)) {
+		  orbitPoints[j].x = SOLAR_SYSTEM_CENTER_X - roundf(orbitScale*r*cbr*cos(lr)) - 23;
+		  orbitPoints[j].y = y;
+		  j++;
+		}
 	      }
-	      gdk_draw_lines(pixmap, gC[OR_GREEN], orbitPoints, nEntries);
+	      if (j > 0)
+		gdk_draw_lines(pixmap, gC[OR_GREEN], orbitPoints, j);
 	      free(orbitPoints);
-	      /* Now plot the commet itself (if it should be) */
-	      getCometRADec(dataDir, comet->name, tJD, FALSE, &lComet, &bComet, &rComet, NULL);
-	      x = SOLAR_SYSTEM_CENTER_X -
-		roundf(orbitScale*rComet*cos(DEGREES_TO_RADIANS*bComet)*cos(DEGREES_TO_RADIANS*lComet));
-	      y = SOLAR_SYSTEM_CENTER_Y +
-		roundf(orbitScale*rComet*cos(DEGREES_TO_RADIANS*bComet)*sin(DEGREES_TO_RADIANS*lComet));
-	      plotComet(x-23, y-23, atan2f(y-SOLAR_SYSTEM_CENTER_Y, x-SOLAR_SYSTEM_CENTER_X));
+	      if (j > 0) {
+		/* Now plot the commet itself (if it should be) */
+		getCometRADec(dataDir, comet->name, tJD, FALSE, &lComet, &bComet, &rComet, NULL);
+		y = SOLAR_SYSTEM_CENTER_Y +
+		  roundf(orbitScale*rComet*cos(DEGREES_TO_RADIANS*bComet)*sin(DEGREES_TO_RADIANS*lComet));
+		if ((y >= SS_BLANKING_BASE) && (y <= SS_BLANKING_BASE+SS_BLANKING_HEIGHT)) {
+		  x = SOLAR_SYSTEM_CENTER_X -
+		    roundf(orbitScale*rComet*cos(DEGREES_TO_RADIANS*bComet)*cos(DEGREES_TO_RADIANS*lComet));
+		  if (TRUE)
+		    if (comet->nickName == NULL)
+		      plotComet(x-23, y-23, atan2f(y-SOLAR_SYSTEM_CENTER_Y, x-SOLAR_SYSTEM_CENTER_X),
+				TRUE, comet->name, SS_BLANKING_BASE, SS_BLANKING_BASE+SS_BLANKING_HEIGHT);
+		    else
+		      plotComet(x-23, y-23, atan2f(y-SOLAR_SYSTEM_CENTER_Y, x-SOLAR_SYSTEM_CENTER_X),
+				TRUE, comet->nickName, SS_BLANKING_BASE, SS_BLANKING_BASE+SS_BLANKING_HEIGHT);
+		  else
+		    plotComet(x-23, y-23, atan2f(y-SOLAR_SYSTEM_CENTER_Y, x-SOLAR_SYSTEM_CENTER_X),
+			      FALSE, NULL, SS_BLANKING_BASE, SS_BLANKING_BASE+SS_BLANKING_HEIGHT);
+		}
+	      }
 	    }
 	    comet = comet->next;
 	  }
@@ -7517,6 +7569,8 @@ static void drawOptsScreens(void)
 	  if (!foundADisplayableComet) {
 	    sprintf(scratchString, "Comet information for   ");
 	    makeTimeString(&scratchString[strlen(scratchString)], TRUE);
+	    if (strstr(scratchString, "LST"))
+	      strstr(scratchString, "LST")[0] = (char)0;
 	    renderPangoText(scratchString, OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
 			    pixmap, displayWidth>>1, 11+line, 0.0, TRUE, 0);
 	    line += 10+LINE_SKIP;
