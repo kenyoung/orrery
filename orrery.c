@@ -9640,11 +9640,13 @@ static void drawOptsScreens(void)
     }
     break;
   case PLANETCOMPASS_SCREEN:
+#define MAX_COMETS (10)
     {
-      int circleRadius, circleX, circleY, i, planet, done,
-	x[N_SOLAR_SYSTEM_OBJECTS], y[N_SOLAR_SYSTEM_OBJECTS],
-	xx[N_SOLAR_SYSTEM_OBJECTS], yy[N_SOLAR_SYSTEM_OBJECTS];
+      int circleRadius, circleX, circleY, i, done, nComets,
+	x[N_SOLAR_SYSTEM_OBJECTS+MAX_COMETS], y[N_SOLAR_SYSTEM_OBJECTS+MAX_COMETS],
+	xx[N_SOLAR_SYSTEM_OBJECTS+MAX_COMETS], yy[N_SOLAR_SYSTEM_OBJECTS+MAX_COMETS];
       int isAComet = FALSE;
+      int planet = 0;
       int plotOrder[9] = {EARTH, MERCURY, VENUS, MOON, MARS, JUPITER, SATURN, URANUS, NEPTUNE};
       float dummy;
       double rA, dec, az, zA;
@@ -9744,10 +9746,29 @@ static void drawOptsScreens(void)
       }
       /* Loop down to 0, so that the Sun doesn't get covered if objects are close to it in sky */
       planetInfo(dataDir, EARTH, tJD, &rA, &dec, &dummy, &dummy);
-      for (i = N_SOLAR_SYSTEM_OBJECTS-2; i >=  1; i--) {
+      if (!cometDataReadIn)
+	readInCometEphemerides(dataDir);
+      nComets = 0;
+      comet = cometRoot;
+      while ((comet != NULL) && (nComets < MAX_COMETS)) {
+	nComets++;
+	comet = comet->next;
+      }
+      comet = cometRoot;
+      i = nComets+N_SOLAR_SYSTEM_OBJECTS-2;
+      done = FALSE;
+      while (!done) {
 	int w, h, boost, clear, j, dSq;
+	double dDummy;
 
-	planetInfo(dataDir, i, tJD, &rA, &dec, &dummy, &dummy);
+	if (i > N_SOLAR_SYSTEM_OBJECTS-2)
+	  isAComet = TRUE;
+	else
+	  isAComet = FALSE;
+	if (isAComet)
+	  getCometRADec(dataDir, comet->name, tJD, TRUE, &rA, &dec, NULL, &dDummy);
+	else
+	  planetInfo(dataDir, i, tJD, &rA, &dec, &dummy, &dummy);
 	azZA(rA, sin(dec), cos(dec), &az, &zA, FALSE);
 	boost = 0;
 	do {
@@ -9755,7 +9776,7 @@ static void drawOptsScreens(void)
 	  y[i] = (int)((float)(circleY+circleRadius) - (float)(circleRadius-33-boost*20) * cos(az) + 0.5);
 	  clear = TRUE;
 	  if (i < N_SOLAR_SYSTEM_OBJECTS-2) {
-	    for (j = N_SOLAR_SYSTEM_OBJECTS-2; j > i; j--) {
+	    for (j = nComets+N_SOLAR_SYSTEM_OBJECTS-2; j > i; j--) {
 	      dSq = ((x[i]-x[j])*(x[i]-x[j])) + ((y[i]-y[j])*(y[i]-y[j]));
 	      if (dSq < 200) {
 		boost++;
@@ -9769,11 +9790,18 @@ static void drawOptsScreens(void)
 	  drawCompassLine(gC[OR_WHITE], az, 20+boost*20, circleX+circleRadius, circleY+circleRadius, circleRadius);
 	else
 	  drawCompassLine(gC[OR_RED], az, 20+boost*20, circleX+circleRadius, circleY+circleRadius, circleRadius);
-	gdk_drawable_get_size(planetImages[i], &w, &h);
-	if (i != EARTH)
-	  gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[i], 0, 0,
-			    x[i]-w/2, y[i]-h/2, 20, 20);
+	if (isAComet)
+	  gdk_drawable_get_size(planetImages[10], &w, &h);
 	else
+	  gdk_drawable_get_size(planetImages[i], &w, &h);
+	if (i != EARTH) {
+	  if (isAComet)
+	    gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[10], 0, 0,
+			      x[i]-w/2, y[i]-h/2, 20, 20);
+	  else
+	    gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[i], 0, 0,
+			      x[i]-w/2, y[i]-h/2, 20, 20);
+	} else
 	  gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[SUN], 0, 0,
 			    x[i]-w/2, y[i]-h/2, 20, 20);
 	boost = 0;
@@ -9782,7 +9810,7 @@ static void drawOptsScreens(void)
 	  yy[i] = (int)((float)(circleY+circleRadius) + (float)(circleRadius-30-boost*20) * cos(M_PI+zA) + 0.5);
 	  clear = TRUE;
 	  if (i < N_SOLAR_SYSTEM_OBJECTS-2) {
-	    for (j = N_SOLAR_SYSTEM_OBJECTS-2; j > i; j--) {
+	    for (j = nComets+N_SOLAR_SYSTEM_OBJECTS-2; j > i; j--) {
 	      dSq = ((xx[i]-xx[j])*(xx[i]-xx[j])) + ((yy[i]-yy[j])*(yy[i]-yy[j]));
 	      if (dSq < 200) {
 		boost++;
@@ -9796,13 +9824,23 @@ static void drawOptsScreens(void)
 	  drawCompassLine(gC[OR_WHITE], M_2PI-zA, 20+boost*20, circleRadius, circleY+circleRadius, circleRadius);
 	else
 	  drawCompassLine(gC[OR_RED], M_2PI-zA, 20+boost*20, circleRadius, circleY+circleRadius, circleRadius);
-	if (i != EARTH)
-	  gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[i], 0, 0,
-			    xx[i]-w/2, yy[i]-h/2, 20, 20);
-	else
+	if (i != EARTH) {
+	  if (isAComet)
+	    gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[10], 0, 0,
+			      xx[i]-w/2, yy[i]-h/2, 20, 20);
+	  else
+	    gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[i], 0, 0,
+			      xx[i]-w/2, yy[i]-h/2, 20, 20);
+	} else
 	  gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[SUN], 0, 0,
 			    xx[i]-w/2, yy[i]-h/2, 20, 20);
-      } /* End of for loop plotting az-el markers on the compass */
+	i--;
+	if (isAComet && (comet != NULL))
+	  comet = comet->next;
+	if (i == 0)
+	  done = TRUE;
+      } /* End of while loop plotting az-el markers on the compass */
+      comet = NULL;
       row += 34;
       sprintf(scratchString, "                         Rising             Transit            Setting     ");
       stringWidth = gdk_string_width(smallFont, scratchString);
