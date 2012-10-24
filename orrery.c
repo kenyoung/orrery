@@ -5952,7 +5952,7 @@ static void drawOptsScreens(void)
 	    }
 	  }
 	} /* End of loop over i, which plots the planets which fit on the display */
-	if (!schematic && showComets) {
+	if (!schematic) {
 	  int j;
 	  double lComet, bComet, rComet;
 	  cometEphem *comet;
@@ -9765,9 +9765,13 @@ static void drawOptsScreens(void)
 	  isAComet = TRUE;
 	else
 	  isAComet = FALSE;
-	if (isAComet)
+	if (isAComet) {
+	  if ((tJD < comet->firstTJD) || (tJD > comet->lastTJD)) {
+	    x[i] = xx[i] = 1000000;
+	    goto abortCompassPlot;
+	  }
 	  getCometRADec(dataDir, comet->name, tJD, TRUE, &rA, &dec, NULL, &dDummy);
-	else
+	} else
 	  planetInfo(dataDir, i, tJD, &rA, &dec, &dummy, &dummy);
 	azZA(rA, sin(dec), cos(dec), &az, &zA, FALSE);
 	boost = 0;
@@ -9834,6 +9838,7 @@ static void drawOptsScreens(void)
 	} else
 	  gdk_draw_drawable(pixmap, gC[OR_BLUE], planetImages[SUN], 0, 0,
 			    xx[i]-w/2, yy[i]-h/2, 20, 20);
+      abortCompassPlot:
 	i--;
 	if (isAComet && (comet != NULL))
 	  comet = comet->next;
@@ -9869,6 +9874,8 @@ static void drawOptsScreens(void)
 	double hA, dec, rA, transitEl, theAz, az, zA, dDummy;
 	
 	if (isAComet) {
+	  if ((tJD < comet->firstTJD) || (tJD > comet->lastTJD))
+	    goto abortCompassTable;
 	  if (comet->nickName == NULL)
 	    sprintf(scratchString, "%s", comet->name);
 	  else
@@ -9986,6 +9993,7 @@ static void drawOptsScreens(void)
 			  row*BIGGER_ROW_STEP, scratchString);
 	}
 	row++;
+      abortCompassTable:
 	i++;
 	if (i >= N_SOLAR_SYSTEM_OBJECTS-2) {
 	  if (comet == NULL) {
@@ -10022,31 +10030,93 @@ static void drawOptsScreens(void)
 }
 
 /*
+  The following function checks to see if there is an anouncements file.
+  Such a file will be included in new releases of the program, and
+  will describe the changes which have been made to the program since
+  the last version.  If such a file exists, its test will be displayed
+  and the file will be deleted, to prevent it from being displayed
+  again the next time that the program is run.
+ */
+static int checkForAnnouncements(void)
+{
+  int fD, row, tWidth, tHeight, eOF = FALSE;
+  int returnValue = FALSE;
+  char fileName[100], scratchString[100];
+
+  sprintf(fileName, "%s/announcement", dataDir);
+  fD = open(fileName, O_RDONLY);
+  if (fD >= 0) {
+    gdk_draw_rectangle(pixmap, drawingArea->style->black_gc,
+		       TRUE, 0, 0,
+		       drawingArea->allocation.width,
+		       drawingArea->allocation.height);
+    row = 1;
+    sprintf(scratchString, "Orrery Version %s", orreryVersion);
+    renderPangoText(scratchString, OR_CREAM, MEDIUM_PANGO_FONT, &tWidth, &tHeight,
+		    pixmap, displayWidth >> 1, row*ABOUT_ROW_STEP,
+		    0.0, TRUE, 0);
+    row += 3;
+    renderPangoText("Here's what's new in this version:", OR_BLUE, SMALL_PANGO_FONT, &tWidth, &tHeight,
+		    pixmap, displayWidth >> 1, row*ABOUT_ROW_STEP,
+		    0.0, TRUE, 0);
+    row += 1;
+    do {
+      getLine(fD, scratchString, &eOF);
+      if (!eOF) {
+	row += 2;
+	renderPangoText(scratchString, OR_WHITE, SMALL_PANGO_FONT, &tWidth, &tHeight,
+		    pixmap, 10, row*ABOUT_ROW_STEP,
+		    0.0, FALSE, 0);
+      }
+    } while (!eOF);
+    renderPangoText("This page will only be displayed once", OR_BLUE, SMALL_PANGO_FONT, &tWidth, &tHeight,
+		    pixmap, displayWidth >> 1, displayHeight - 6*ABOUT_ROW_STEP,
+		    0.0, TRUE, 0);
+    renderPangoText("Tap the screen to continue", OR_BLUE, SMALL_PANGO_FONT, &tWidth, &tHeight,
+		    pixmap, displayWidth >> 1, displayHeight - 3*ABOUT_ROW_STEP,
+		    0.0, TRUE, 0);
+    returnValue = TRUE;
+    close(fD);
+    unlink(fileName);
+  }
+  return(returnValue);
+}
+
+/*
   This function is the top functions for redrawing the plot in
   the drawing area.   It calls other functions to draw the
   different plot styles.
 */
 static void redrawScreen(void)
 {
-  if (imAPostageStamp) {
-    postageStampUTMM = postageStampLSTMM = -1;
-  } else if (inFlashlightMode) {
-    gdk_draw_rectangle(pixmap, flashlightGC,
-		       TRUE, 0, 0,
-		       drawingArea->allocation.width,
-		       drawingArea->allocation.height);
-  } else {
-    gdk_draw_rectangle(pixmap, drawingArea->style->black_gc,
-		       TRUE, 0, 0,
-		       drawingArea->allocation.width,
-		       drawingArea->allocation.height);
-    if (displayingAnOptsPage)
-      drawOptsScreens();
-    else  {
-      xBorder = 1;
-      yBorder = 5;
-      xLeftLabelSkip = 0;
-      redrawScreenTransverseMercator();
+  static int firstCall = TRUE;
+  int displayingAnnouncements = FALSE;
+
+  if (firstCall && (displayWidth > 100) && (displayHeight > 100)) {
+    displayingAnnouncements = checkForAnnouncements();
+    firstCall = FALSE;
+  }
+  if (!displayingAnnouncements) {
+    if (imAPostageStamp) {
+      postageStampUTMM = postageStampLSTMM = -1;
+    } else if (inFlashlightMode) {
+      gdk_draw_rectangle(pixmap, flashlightGC,
+			 TRUE, 0, 0,
+			 drawingArea->allocation.width,
+			 drawingArea->allocation.height);
+    } else {
+      gdk_draw_rectangle(pixmap, drawingArea->style->black_gc,
+			 TRUE, 0, 0,
+			 drawingArea->allocation.width,
+			 drawingArea->allocation.height);
+      if (displayingAnOptsPage)
+	drawOptsScreens();
+      else  {
+	xBorder = 1;
+	yBorder = 5;
+	xLeftLabelSkip = 0;
+	redrawScreenTransverseMercator();
+      }
     }
   }
 }
