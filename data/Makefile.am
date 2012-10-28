@@ -4,6 +4,7 @@
 nobase_dist_pkgdata_DATA = \
 	config \
 	hipparcos.dat \
+	announcement \
 	starNames.bin \
 	meteorShowers \
 	venusVSOPData.bin \
@@ -139,4 +140,6 @@ nobase_dist_pkgdata_DATA = \
 	orbitalElements/plutoElements \
 	orbitalElements/saturnElements \
 	orbitalElements/uranusElements \
-	orbitalElements/venusElements
+	orbitalElements/venusElements \
+	comets/ISON.comet \
+	comets/Pan-STARRS.comet

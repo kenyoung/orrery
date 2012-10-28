@@ -138,6 +138,7 @@ int showNames = FALSE; /* Label bright/famous stars */
 int showCometNames = FALSE;
 int showMeteors = FALSE; /* Show meteor show radiants */
 int displayPlanetsAsSymbols = FALSE;
+int showCometElevations = FALSE;
 
 char *solarSystemNames[N_SOLAR_SYSTEM_OBJECTS] = {"Sun",     "Mercury",   "Venus",    "Earth",
 						  "Moon",    "Mars",      "Jupiter",  "Saturn",
@@ -378,15 +379,16 @@ typedef struct sensitiveArea {
 sensitiveArea *sensitiveAreaRoot = NULL;
 
 /* Types of sensitiveAreas: */
-#define SA_TOP_AREA            (1)
-#define SA_FINGER_PAN_AREA     (2)
-#define SA_MONTH_LEFT_ARROW    (3)
-#define SA_MONTH_RIGHT_ARROW   (4)
-#define SA_SOLAR_SYSTEM_BUTTON (5)
-#define SA_JOVIAN              (6)
-#define SA_UPDATE_NAVIGATION   (7)
-#define SA_NAVIGATION_OBJECT   (8)
-#define SA_DISPLAY_NAV_LIST    (9)
+#define SA_TOP_AREA             (1)
+#define SA_FINGER_PAN_AREA      (2)
+#define SA_MONTH_LEFT_ARROW     (3)
+#define SA_MONTH_RIGHT_ARROW    (4)
+#define SA_SOLAR_SYSTEM_BUTTON  (5)
+#define SA_JOVIAN               (6)
+#define SA_UPDATE_NAVIGATION    (7)
+#define SA_NAVIGATION_OBJECT    (8)
+#define SA_DISPLAY_NAV_LIST     (9)
+#define SA_ELEVATION_BUTTON    (10)
 
 /* Types of deep sky object */
 #define SUPERNOVA_REMNENT (0)
@@ -748,6 +750,8 @@ static void fullRedraw(int dummy);
 
 float roundf(float x);
 
+void heliocentricEclipticCoordinates(char *dataDir, double tJD, int planet,
+				     double *lHelio, double *bHelio, double *rHelio);
 void readInCometEphemerides(char *dataDir);
 void getCometRADec(char *dataDir, char *name, double tJD, int eq, double *c1, double *c2, double *c3, double *mag);
 void planetInfo(char *dataDir, int planetNumber, double tJD, double *rA, double *dec, float *F, float *mag);
@@ -7725,7 +7729,7 @@ static void drawOptsScreens(void)
 	    tJDToHHMMSS(lastRise, &rAHH, &rAMM, &sS);
 	    sprintf(scratchString, "%02d:%02d", rAHH, rAMM);
 	    renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
-			    &tWidth, &tHeight, pixmap, 110, 20+line, 0.0, FALSE, 0);
+			    &tWidth, &tHeight, pixmap, 117, 20+line, 0.0, FALSE, 0);
 	    renderPangoText("Transit", cometColor, MEDIUM_PANGO_FONT,
 			    &tWidth, &tHeight, pixmap, 195, 20+line, 0.0, FALSE, 0);
 	    tJDToHHMMSS(lastTransit, &rAHH, &rAMM, &sS);
@@ -7744,7 +7748,7 @@ static void drawOptsScreens(void)
 	    tJDToHHMMSS(nextRise, &rAHH, &rAMM, &sS);
 	    sprintf(scratchString, "%02d:%02d", rAHH, rAMM);
 	    renderPangoText(scratchString, cometBoldColor, MEDIUM_PANGO_FONT,
-			    &tWidth, &tHeight, pixmap, 110, 20+line, 0.0, FALSE, 0);
+			    &tWidth, &tHeight, pixmap, 117, 20+line, 0.0, FALSE, 0);
 	    renderPangoText("Transit", cometColor, MEDIUM_PANGO_FONT,
 			    &tWidth, &tHeight, pixmap, 195, 20+line, 0.0, FALSE, 0);
 	    tJDToHHMMSS(nextTransit, &rAHH, &rAMM, &sS);
@@ -9155,17 +9159,51 @@ static void drawOptsScreens(void)
       int plotWidth, circumpolar, planet, plotHeight, planetRowInc, xNow;
       int plotOrder[9] = {EARTH, MOON, MERCURY, VENUS, MARS, JUPITER, SATURN, URANUS, NEPTUNE};
       int year, month, day, hh, mm, lineColor, i;
+      int nComets = 0;
       int color = OR_GREEN;
       int xSunrise, xSunset;
       float labelTime, deltaTime, dummyF, localMeanTime;
       double uT, h0, riseTime, setTime, dummyD, tJDMidnight, rawRiseTime, rawSetTime;
       double rA, dec, az, zA;
       GdkPoint box[4];
+      cometEphem *comet;
 
       needNewTime = TRUE;
       uT = (tJD - (double)((int)tJD) - 0.5) * 24.0;
       doubleNormalize0to24(&uT);
       lSTNow = lST();
+      if (!cometDataReadIn)
+	readInCometEphemerides(dataDir);
+      comet = cometRoot;
+      while (comet != NULL) {
+	if ((tJD >= comet->firstTJD) && (tJD <= comet->lastTJD))
+	  nComets++;
+	comet = comet->next;
+      }
+#define COMET_BOX_LEFT_OFFSET   (5)
+#define COMET_BOX_TOP_OFFSET   (28)
+#define COMET_BOX_WIDTH       (140)
+#define COMET_BOX_HEIGHT       (24)
+      if (nComets > 0) {
+	if (showCometElevations)
+	  strcpy(scratchString, "Show Planets");
+	else
+	  strcpy(scratchString, "Show Comets");
+	renderPangoText(scratchString, OR_WHITE, SMALL_PANGO_FONT, &tWidth, &tHeight,
+			pixmap, COMET_BOX_LEFT_OFFSET + COMET_BOX_WIDTH/2,
+			COMET_BOX_TOP_OFFSET+COMET_BOX_HEIGHT/2, 0.0, TRUE, 0);
+	box[0].x = COMET_BOX_LEFT_OFFSET;    box[0].y = COMET_BOX_TOP_OFFSET;
+	box[1].x = box[0].x+COMET_BOX_WIDTH; box[1].y = box[0].y;
+	box[2].x = box[1].x;                 box[2].y = box[1].y+COMET_BOX_HEIGHT;
+	box[3].x = box[0].x;                 box[3].y = box[2].y;
+	gdk_draw_polygon(pixmap, gC[OR_WHITE], FALSE, box, 4);
+	addSensitiveArea(FALSE, SA_ELEVATION_BUTTON,
+			 0,
+			 COMET_BOX_TOP_OFFSET-5,
+			 COMET_BOX_LEFT_OFFSET+COMET_BOX_WIDTH+5,
+			 COMET_BOX_TOP_OFFSET+COMET_BOX_HEIGHT+5,
+			 0.0);
+      }
       deltaTime = lSTNow/HOURS_TO_RADIANS - uT;
       /* Draw bounding box */
       box[0].x = PES_LEFT_BORDER;                 box[0].y = PES_TOP_BORDER;
@@ -9272,13 +9310,17 @@ static void drawOptsScreens(void)
       tJDMidnight = (double)((int)(tJD + longitude/M_2PI)) + 0.5 - longitude/M_2PI;
       lSTNow = lSTAtTJD(tJDMidnight);
       xSunrise = xSunset = -100;
+      comet = NULL;
       for (i = 0; i < 9; i++) {
 	int xRise, xSet, xTransit, planetIndex, planetNameIndex, transitEl, planetNameColor;
 	float localRiseTime, localSetTime, elevation;
 	double transitTime, transitElD;
 
 	planet = plotOrder[i];
-	transitTime = calcTransitTime(tJD, planet, &transitElD, TRUE, NULL);
+	if (comet == NULL)
+	  transitTime = calcTransitTime(tJD, planet, &transitElD, TRUE, NULL);
+	else
+	  transitTime = calcTransitTime(tJD, planet, &transitElD, FALSE, comet);
 	transitEl = (int)(transitElD/DEGREES_TO_RADIANS + 0.5);
 	h0 = -(34.0/60.0)*DEGREES_TO_RADIANS;
 	if (planet == EARTH)
@@ -9298,16 +9340,26 @@ static void drawOptsScreens(void)
 	default:
 	  planetIndex = planet - 1;
 	}
-	rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0, &circumpolar,
-					&dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	if (comet == NULL)
+	  rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0, &circumpolar,
+					  &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	else
+	  rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0, &circumpolar,
+					  &dummyD, &dummyD, &dummyD, &dummyF, FALSE, comet);
 	if (!circumpolar) {
 	  double currentEl;
 
 	  riseTime = (rawRiseTime - (double)((int)rawRiseTime) - 0.5) * 24.0;
 	  doubleNormalize0to24(&riseTime);
-	  rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0, &circumpolar,
-					 &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
-	  planetInfo(dataDir, planet, tJD, &rA, &dec, &dummyF, &dummyF);
+	  if (comet == NULL) {
+	    rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0, &circumpolar,
+					   &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	    planetInfo(dataDir, planet, tJD, &rA, &dec, &dummyF, &dummyF);
+	  } else {
+	    rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0, &circumpolar,
+					   &dummyD, &dummyD, &dummyD, &dummyF, FALSE, comet);
+	    getCometRADec(dataDir, comet->name, tJD, TRUE, &rA, &dec, NULL, &dummyD);
+	  }
 	  setTime = (rawSetTime - (double)((int)rawSetTime) - 0.5) * 24.0;
 	  doubleNormalize0to24(&setTime);
 	  localRiseTime = 12.0 + riseTime + longitude/HOURS_TO_RADIANS;
@@ -9377,7 +9429,15 @@ static void drawOptsScreens(void)
 	    if (abs(xNow - xTransit) > stringWidth)
 	      drawBoundedString(color, xTransit,
 				PES_TOP_BORDER + PES_PLANET_BASE+27 + planetIndex*planetRowInc, scratchString);
-	    renderPangoText(solarSystemNames[planetNameIndex], planetNameColor, SMALL_PANGO_FONT, &tWidth, &tHeight,
+	    if (comet == NULL)
+	      strcpy(scratchString, solarSystemNames[planetNameIndex]);
+	    else {
+	      if (comet->nickName == NULL)
+		strcpy(scratchString, comet->name);
+	      else
+		strcpy(scratchString, comet->nickName);
+	    }
+	    renderPangoText(scratchString, planetNameColor, SMALL_PANGO_FONT, &tWidth, &tHeight,
 			    pixmap, xTransit, PES_TOP_BORDER + PES_PLANET_BASE-16 + planetIndex*planetRowInc,
 			    0.0, TRUE, 0);
 	  } else {
@@ -9414,7 +9474,6 @@ static void drawOptsScreens(void)
 			      xSunrise, PES_TOP_BORDER + PES_PLANET_BASE + planetIndex*planetRowInc,
 			      xSet, PES_TOP_BORDER + PES_PLANET_BASE + planetIndex*planetRowInc);
 	      }
-	      
 	      if (xRise > xSunrise) {
 		gdk_draw_line(pixmap, gC[OR_GREY], xRise, PES_TOP_BORDER + PES_PLANET_BASE + planetIndex*planetRowInc,
 			      displayWidth - PES_RIGHT_BORDER,
@@ -9457,11 +9516,19 @@ static void drawOptsScreens(void)
 	    if (abs(xNow - xTransit) > stringWidth)
 	      drawBoundedString(color, xTransit,
 				PES_TOP_BORDER + PES_PLANET_BASE+27 + planetIndex*planetRowInc, scratchString);
-	    renderPangoText(solarSystemNames[planetNameIndex], planetNameColor,
+	    if (comet == NULL)
+	      strcpy(scratchString, solarSystemNames[planetNameIndex]);
+	    else {
+	      if (comet->nickName == NULL)
+		strcpy(scratchString, comet->name);
+	      else
+		strcpy(scratchString, comet->nickName);
+	    }
+	    renderPangoText(scratchString, planetNameColor,
 			    SMALL_PANGO_FONT, &tWidth, &tHeight, pixmap,
 			    PES_LEFT_BORDER + 45, PES_TOP_BORDER + PES_PLANET_BASE-16 + planetIndex*planetRowInc,
 			    0.0, TRUE, 0);
-	    renderPangoText(solarSystemNames[planetNameIndex], planetNameColor, SMALL_PANGO_FONT, &tWidth, &tHeight,
+	    renderPangoText(scratchString, planetNameColor, SMALL_PANGO_FONT, &tWidth, &tHeight,
 			    pixmap, displayWidth - PES_RIGHT_BORDER - 45,
 			    PES_TOP_BORDER + PES_PLANET_BASE-16 + planetIndex*planetRowInc, 0.0, TRUE, 0);
 	    if (planet == EARTH) {
@@ -9502,8 +9569,12 @@ static void drawOptsScreens(void)
 			xSet, PES_TOP_BORDER + PES_PLANET_BASE-5 + planetIndex*planetRowInc);
 	  for (elevation = 20.0; elevation < 90.0; elevation += 20.0) {
 	    h0 = elevation*DEGREES_TO_RADIANS;
-	    rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0,
-					    &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	    if (comet == NULL)
+	      rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0,
+					      &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	    else
+	      rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0,
+					      &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, FALSE, comet);
 	    if (!circumpolar) {
 	      riseTime = (rawRiseTime - (double)((int)rawRiseTime) - 0.5) * 24.0;
 	      doubleNormalize0to24(&riseTime);
@@ -9529,8 +9600,12 @@ static void drawOptsScreens(void)
 		}
 	      }
 	    }
-	    rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0,
-					   &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	    if (comet == NULL)
+	      rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0,
+					     &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	    else
+	      rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0,
+					     &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, FALSE, comet);
 	    if (!circumpolar) {
 	      setTime = (rawSetTime - (double)((int)rawSetTime) - 0.5) * 24.0;
 	      doubleNormalize0to24(&setTime);
@@ -9563,8 +9638,16 @@ static void drawOptsScreens(void)
 	    /* The object does not rise today */
 	    if ((planetNameIndex == SUN) || (planetNameIndex == MOON))
 	      sprintf(scratchString, "The %s will not rise today",solarSystemNames[planetNameIndex]);
-	    else
-	      sprintf(scratchString, "%s will not rise today",solarSystemNames[planetNameIndex]);
+	    else {
+	      if (comet == NULL)
+		sprintf(scratchString, "%s will not rise today",solarSystemNames[planetNameIndex]);
+	      else {
+		if (comet->nickName == NULL)
+		  sprintf(scratchString, "%s will not rise today", comet->name);
+		else
+		  sprintf(scratchString, "%s will not rise today", comet->nickName);
+	      }
+	    }
 	    renderPangoText(scratchString, OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
 			    pixmap, PES_LEFT_BORDER + plotWidth/2,
 			    PES_TOP_BORDER + PES_PLANET_BASE-14 + planetIndex*planetRowInc, 0.0, TRUE, 0);
@@ -9577,10 +9660,21 @@ static void drawOptsScreens(void)
 			  PES_TOP_BORDER + PES_PLANET_BASE + planetIndex*planetRowInc,
 			  displayWidth - PES_RIGHT_BORDER,
 			  PES_TOP_BORDER + PES_PLANET_BASE + planetIndex*planetRowInc);
-	    renderPangoText(solarSystemNames[planetNameIndex], OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
+	    if (comet == NULL)
+	      strcpy(scratchString, solarSystemNames[planetNameIndex]);
+	    else {
+	      if (comet->nickName == NULL)
+		strcpy(scratchString, comet->name);
+	      else
+		strcpy(scratchString, comet->nickName);
+	    }
+	    renderPangoText(scratchString, OR_CREAM, SMALL_PANGO_FONT, &tWidth, &tHeight,
 			    pixmap, PES_LEFT_BORDER + plotWidth/2,
 			    PES_TOP_BORDER + PES_PLANET_BASE-16 + planetIndex*planetRowInc, 0.0, TRUE, 0);
-	    planetInfo(dataDir, planet, tJDMidnight, &rA, &dummyD, &dummyF, &dummyF);
+	    if (comet == NULL)
+	      planetInfo(dataDir, planet, tJDMidnight, &rA, &dummyD, &dummyF, &dummyF);
+	    else
+	      getCometRADec(dataDir, comet->name, tJDMidnight, TRUE, &rA, &dec, NULL, &dummyD);
 	    localMeanTime = 12.0 - deltaTime + rA/HOURS_TO_RADIANS + longitude/HOURS_TO_RADIANS;
 	    floatNormalize0to24(&localMeanTime);
 	    xTransit =  (int)(localMeanTime/24.0 * (float)plotWidth) + PES_LEFT_BORDER;
@@ -9593,8 +9687,12 @@ static void drawOptsScreens(void)
 				PES_TOP_BORDER + PES_PLANET_BASE+27 + planetIndex*planetRowInc, scratchString);
 	    for (elevation = 20.0; elevation < 90.0; elevation += 20.0) {
 	      h0 = elevation*DEGREES_TO_RADIANS;
-	      rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0,
-					      &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	      if (comet == NULL)
+		rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0,
+						&circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	      else
+		rawRiseTime = calcRiseOrSetTime(TRUE, planet, tJDMidnight, lSTNow, h0,
+						&circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, FALSE, comet);
 	      if (!circumpolar) {
 		riseTime = (rawRiseTime - (double)((int)rawRiseTime) - 0.5) * 24.0;
 		doubleNormalize0to24(&riseTime);
@@ -9613,8 +9711,12 @@ static void drawOptsScreens(void)
 				      PES_TOP_BORDER + PES_PLANET_BASE + planetIndex*planetRowInc + 13 , scratchString);
 		}
 	      }
-	      rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0,
-					     &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	      if (comet == NULL)
+		rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0,
+					       &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, TRUE, NULL);
+	      else
+		rawSetTime = calcRiseOrSetTime(FALSE, planet, tJDMidnight, lSTNow, h0,
+					       &circumpolar, &dummyD, &dummyD, &dummyD, &dummyF, FALSE, comet);
 	      if (!circumpolar) {
 		setTime = (rawSetTime - (double)((int)rawSetTime) - 0.5) * 24.0;
 		doubleNormalize0to24(&setTime);
@@ -9635,6 +9737,16 @@ static void drawOptsScreens(void)
 	      }
 	    }
 	  }
+	}
+	if ((nComets > 0) && showCometElevations && (i >= 1)) {
+	  if (comet == NULL)
+	    comet = cometRoot;
+	  else
+	    comet = comet->next;
+	  while ((comet != NULL) && ((tJD < comet->firstTJD) || (tJD > comet->lastTJD)))
+	    comet = comet->next;
+	  if (comet == NULL)
+	    i = 10;
 	}
       }
     }
@@ -9767,7 +9879,7 @@ static void drawOptsScreens(void)
 	  isAComet = FALSE;
 	if (isAComet) {
 	  if ((tJD < comet->firstTJD) || (tJD > comet->lastTJD)) {
-	    x[i] = xx[i] = 1000000;
+	    x[i] = xx[i] = y[i] = yy[i] = 0;
 	    goto abortCompassPlot;
 	  }
 	  getCometRADec(dataDir, comet->name, tJD, TRUE, &rA, &dec, NULL, &dDummy);
@@ -10044,8 +10156,10 @@ static int checkForAnnouncements(void)
   char fileName[100], scratchString[100];
 
   sprintf(fileName, "%s/announcement", dataDir);
+  printf("fileName = %s\n", fileName);
   fD = open(fileName, O_RDONLY);
   if (fD >= 0) {
+    printf("Successful file open\n");
     gdk_draw_rectangle(pixmap, drawingArea->style->black_gc,
 		       TRUE, 0, 0,
 		       drawingArea->allocation.width,
@@ -11083,7 +11197,7 @@ static gboolean processTap(int x, int y)
   } else {
     while ((sA != NULL) && (!found)) {
       dprintf("Checking item of type %d  BLC: %d, %d  TRC: %d, %d\n",
-		sA->type, sA->bLCX, sA->bLCY, sA->tRCX, sA->tRCY);
+	      sA->type, sA->bLCX, sA->bLCY, sA->tRCX, sA->tRCY);
       if ((x >= sA->bLCX) && (x <= sA->tRCX)
 	    && (y >= sA->bLCY) && (y <= sA->tRCY))
 	found = TRUE;
@@ -11179,6 +11293,13 @@ static gboolean processTap(int x, int y)
 	break;
       case SA_DISPLAY_NAV_LIST:
 	displayIndividualNavObject = FALSE;
+	fullRedraw(FALSE);
+	break;
+      case SA_ELEVATION_BUTTON:
+	if (showCometElevations)
+	  showCometElevations = FALSE;
+	else
+	  showCometElevations = TRUE;
 	fullRedraw(FALSE);
 	break;
       default:
